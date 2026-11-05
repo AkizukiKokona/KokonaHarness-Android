@@ -132,6 +132,12 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
    - 清理 `@deepseek-ai` 嵌套依赖中的重复 `zod` 源码（约 147MB），以及 `.d.ts`、测试、文档。
    - 目标：APK 显著小于当前 133,367,208 字节（约 127 MiB），并低于 DSH Go 的 183.8 MiB。
 
+4. **软键盘遮挡布局（WebView / 浏览器）**
+   - 原生层：`AndroidManifest` 已设置 `adjustResize`；对忽略该模式的 OEM，用 `WindowInsetsCompat` 监听 IME inset，给根容器补底部 padding，并向 WebView 派发 `resize`。
+   - Web 层：注入 `visualViewport` 的 `resize`/`scroll` 监听，写入 CSS 变量 `--kn-keyboard-inset`；`focusin` 时对输入框执行 `scrollIntoView({ block: "center" })`。
+   - 页面 meta：`interactive-widget=resizes-content`、`viewport-fit=cover`，配合 `env(safe-area-inset-bottom)`。
+   - 目标：输入框与底部操作栏始终位于键盘上方，不改动 DSH 原生布局。
+
 ## 运行时定制
 
 构建树中已应用的品牌/移动端定制（升级 DSH 时需重新移植）：
