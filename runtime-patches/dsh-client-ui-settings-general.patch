@@ -1,0 +1,395 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+@@ -57,7 +57,7 @@
+ 		}
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-general/src/client/SettingsRoot.module.css.mjs
+-		const css$7 = ".VOzbGW_triggerRow{flex:none;align-items:center;gap:8px;width:100%;margin:4px 0;display:flex;position:relative}.VOzbGW_triggerRow.VOzbGW_railRow{width:36px;margin:8px 0 10px}.VOzbGW_trigger{align-items:center;gap:var(--dsh-sidebar-label-gap);width:auto;min-width:0;height:42px;padding:0 calc(var(--dsh-sidebar-row-padding) - var(--dsh-sidebar-paint-inset));box-sizing:border-box;border-radius:var(--dsw-radius-md);border:none;border-inline:var(--dsh-sidebar-paint-inset) solid transparent;cursor:pointer;color:var(--dsw-alias-label-primary);background:padding-box padding-box;flex:1;margin:0;font-family:inherit;font-size:14px;line-height:22px;display:flex;overflow:hidden}@media (hover:hover){.VOzbGW_trigger:hover{background-color:var(--dsw-alias-interactive-bg-hover)}}.VOzbGW_trigger.VOzbGW_rail{background-clip:border-box;border-inline:0;flex:none;justify-content:center;gap:0;width:36px;height:36px;margin:0;padding:0}.VOzbGW_triggerLabel{white-space:nowrap;overflow:hidden}.VOzbGW_overlay{z-index:1000;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.VOzbGW_mask{inset:var(--dsh-frame-chrome-top,0px) 0 0;background:var(--dsw-alias-bg-mask-1);backdrop-filter:var(--dsw-mask-blur);position:absolute}.VOzbGW_panel{z-index:1;width:800px;height:min(800px, calc(100vh - 2 * max(24px, var(--dsh-frame-overlay-top,24px))));border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-2);max-width:calc(100vw - 48px);box-shadow:var(--dsw-elevation-prominent);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);grid-template:\"VOzbGW_title VOzbGW_header\"\"VOzbGW_nav VOzbGW_options\"minmax(0,1fr)/188px minmax(0,1fr);display:grid;position:relative;overflow:hidden}.VOzbGW_panel:focus{outline:none}.VOzbGW_nav{box-sizing:border-box;flex-direction:column;grid-area:VOzbGW_nav;min-width:0;min-height:0;padding:10px 12px 0;display:flex}.VOzbGW_navTitle{color:var(--dsw-alias-label-primary);grid-area:VOzbGW_title;padding:22px 12px 8px 24px;font-size:16px;font-weight:500;line-height:24px}.VOzbGW_navList{flex-direction:column;gap:4px;min-height:0;display:flex;overflow-y:auto}.VOzbGW_navCell{box-sizing:border-box;border-radius:var(--dsw-radius-md);cursor:pointer;height:40px;color:var(--dsw-alias-label-primary);text-align:left;background:0 0;border:none;align-items:center;gap:8px;padding:9px 16px 9px 12px;font-family:inherit;font-size:14px;font-weight:400;line-height:22px;display:flex}@media (hover:hover){.VOzbGW_navCell:hover{background-color:var(--dsw-alias-interactive-bg-hover)}}.VOzbGW_navCell.VOzbGW_active{background:var(--dsw-specific-sidebar-nav-item-active)}.VOzbGW_navIcon{flex:none;display:flex}.VOzbGW_navLabel{white-space:nowrap;text-overflow:ellipsis;flex:1;min-width:0;overflow:hidden}.VOzbGW_header{box-sizing:border-box;grid-area:VOzbGW_header;justify-content:space-between;align-items:flex-start;gap:8px;height:54px;padding:20px 14px 8px 10px;display:flex}.VOzbGW_actions{justify-content:flex-end;align-items:center;gap:8px;min-width:0;margin-left:auto;display:flex}.VOzbGW_close{border-radius:var(--dsw-radius-sm);cursor:pointer;width:28px;height:28px;color:var(--dsw-alias-label-primary);background:0 0;border:none;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}@media (hover:hover){.VOzbGW_close:hover{background-color:var(--dsw-alias-interactive-bg-hover)}}.VOzbGW_options{grid-area:VOzbGW_options;min-width:0;min-height:0;padding:0 24px 24px;overflow-y:auto}@media (width<=767px){html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_overlay{background:var(--dsw-alias-bg-layer-2);height:100%;position:absolute}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_panel{border-radius:0;grid-template:\"VOzbGW_title VOzbGW_header\"\"VOzbGW_nav VOzbGW_nav\"\"VOzbGW_options VOzbGW_options\"minmax(0,1fr)/minmax(0,1fr) auto;width:100%;max-width:none;height:100%}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navTitle{white-space:nowrap;text-overflow:ellipsis;padding:22px 0 0 16px;overflow:hidden}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_header{height:auto;padding:20px 16px 0 10px}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_nav{padding:0}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navList{overscroll-behavior:none;scrollbar-width:none;flex-direction:row;gap:4px;padding:12px 16px 14px;overflow:auto hidden}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navList::-webkit-scrollbar{display:none}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navCell{flex:1 0 auto;justify-content:center;min-width:108px;padding:0 14px}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navLabel{flex:none}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_options{padding:0 16px 24px}}.VOzbGW_hiddenLabel{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}";
++		const css$7 = ".VOzbGW_triggerRow{flex:none;align-items:center;gap:8px;width:100%;margin:4px 0;display:flex;position:relative}.VOzbGW_triggerRow.VOzbGW_railRow{width:36px;margin:8px 0 10px}.VOzbGW_trigger{align-items:center;gap:var(--dsh-sidebar-label-gap);width:auto;min-width:0;height:42px;padding:0 calc(var(--dsh-sidebar-row-padding) - var(--dsh-sidebar-paint-inset));box-sizing:border-box;border-radius:var(--dsw-radius-md);border:none;border-inline:var(--dsh-sidebar-paint-inset) solid transparent;cursor:pointer;color:var(--dsw-alias-label-primary);background:padding-box padding-box;flex:1;margin:0;font-family:inherit;font-size:14px;line-height:22px;display:flex;overflow:hidden}@media (hover:hover){.VOzbGW_trigger:hover{background-color:var(--dsw-alias-interactive-bg-hover)}}.VOzbGW_trigger.VOzbGW_rail{background-clip:border-box;border-inline:0;flex:none;justify-content:center;gap:0;width:36px;height:36px;margin:0;padding:0}.VOzbGW_triggerLabel{white-space:nowrap;overflow:hidden}.VOzbGW_overlay{z-index:1000;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.VOzbGW_mask{inset:var(--dsh-frame-chrome-top,0px) 0 0;background:var(--dsw-alias-bg-mask-1);backdrop-filter:var(--dsw-mask-blur);position:absolute}.VOzbGW_panel{z-index:1;width:800px;height:min(800px, calc(100vh - 2 * max(24px, var(--dsh-frame-overlay-top,24px))));border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-2);max-width:calc(100vw - 48px);box-shadow:var(--dsw-elevation-prominent);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);grid-template:\"VOzbGW_title VOzbGW_header\"\"VOzbGW_nav VOzbGW_options\"minmax(0,1fr)/188px minmax(0,1fr);display:grid;position:relative;overflow:hidden}.VOzbGW_panel:focus{outline:none}.VOzbGW_nav{box-sizing:border-box;flex-direction:column;grid-area:VOzbGW_nav;min-width:0;min-height:0;padding:10px 12px 0;display:flex}.VOzbGW_navTitle{color:var(--dsw-alias-label-primary);grid-area:VOzbGW_title;padding:22px 12px 8px 24px;font-size:16px;font-weight:500;line-height:24px}.VOzbGW_navList{flex-direction:column;gap:4px;min-height:0;display:flex;overflow-y:auto}.VOzbGW_navCell{box-sizing:border-box;border-radius:var(--dsw-radius-md);cursor:pointer;height:40px;color:var(--dsw-alias-label-primary);text-align:left;background:0 0;border:none;align-items:center;gap:8px;padding:9px 16px 9px 12px;font-family:inherit;font-size:14px;font-weight:400;line-height:22px;display:flex}@media (hover:hover){.VOzbGW_navCell:hover{background-color:var(--dsw-alias-interactive-bg-hover)}}.VOzbGW_navCell.VOzbGW_active{background:var(--dsw-specific-sidebar-nav-item-active)}.VOzbGW_navIcon{flex:none;display:flex}.VOzbGW_navLabel{white-space:nowrap;text-overflow:ellipsis;flex:1;min-width:0;overflow:hidden}.VOzbGW_header{box-sizing:border-box;grid-area:VOzbGW_header;justify-content:space-between;align-items:flex-start;gap:8px;height:54px;padding:20px 14px 8px 10px;display:flex}.VOzbGW_actions{justify-content:flex-end;align-items:center;gap:8px;min-width:0;margin-left:auto;display:flex}.VOzbGW_close{border-radius:var(--dsw-radius-sm);cursor:pointer;width:28px;height:28px;color:var(--dsw-alias-label-primary);background:0 0;border:none;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}@media (hover:hover){.VOzbGW_close:hover{background-color:var(--dsw-alias-interactive-bg-hover)}}.VOzbGW_options{grid-area:VOzbGW_options;min-width:0;min-height:0;padding:0 24px 24px;overflow-y:auto}@media (width<=767px){html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_overlay{background:var(--dsw-alias-bg-layer-2);height:100%;position:absolute}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_panel{border-radius:0;grid-template:\"VOzbGW_title VOzbGW_header\"\"VOzbGW_nav VOzbGW_nav\"\"VOzbGW_options VOzbGW_options\"minmax(0,1fr)/minmax(0,1fr) auto;width:100%;max-width:none;height:100%}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navTitle{white-space:nowrap;text-overflow:ellipsis;padding:22px 0 0 16px;overflow:hidden}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_header{height:auto;padding:20px 16px 0 10px}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_nav{padding:0}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navList{overscroll-behavior:none;scrollbar-width:none;flex-direction:row;gap:4px;padding:12px 16px 14px;overflow:auto hidden}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navList::-webkit-scrollbar{display:none}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navCell{flex:1 0 auto;justify-content:center;min-width:108px;padding:0 14px}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_navLabel{flex:none}html:not([data-windows-titlebar]):not([data-platform=darwin]) .VOzbGW_options{padding:0 16px 24px}}.VOzbGW_hiddenLabel{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.VOzbGW_nav{width:60px;padding:22px 10px 0;transition:width .16s ease}.VOzbGW_navTitle{display:none}.VOzbGW_navList{align-items:center}.VOzbGW_navCell{width:40px;justify-content:center;padding:0;gap:0}.VOzbGW_navLabel{display:none}@media (hover:hover) and (min-width:641px){.VOzbGW_nav:hover{width:188px;padding:22px 12px 0}.VOzbGW_nav:hover .VOzbGW_navTitle{display:block}.VOzbGW_nav:hover .VOzbGW_navList{align-items:stretch}.VOzbGW_nav:hover .VOzbGW_navCell{width:auto;justify-content:flex-start;padding:9px 16px 9px 12px;gap:8px}.VOzbGW_nav:hover .VOzbGW_navLabel{display:block}}@media (max-width:640px){.VOzbGW_panel{width:100vw;max-width:none;height:100vh;border-radius:0}.VOzbGW_nav{width:52px;padding:14px 6px 0}.VOzbGW_navCell{width:40px;height:44px}.VOzbGW_header{height:48px;padding:12px 8px 6px 8px}.VOzbGW_options{padding:0 12px 16px}}.VOzbGW_panel{background:transparent}.VOzbGW_panel::before{content:\"\";pointer-events:none;z-index:0;position:absolute;inset:0;background:var(--dsw-alias-bg-layer-2);opacity:.82}.VOzbGW_nav,.VOzbGW_content{z-index:1;position:relative}";
+ 		const tagId$7 = "@deepseek-ai/dsh-client-ui-settings-general/SettingsRoot.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$7) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -295,6 +295,7 @@
+ 									className: clsx(SettingsRoot_module_css_default.navCell, row.id === active && SettingsRoot_module_css_default.active),
+ 									"aria-current": row.id === active ? "true" : void 0,
+ 									"data-modal-autofocus": row.id === active ? "" : void 0,
++								title: row.label,
+ 									onFocus: (event) => {
+ 										event.currentTarget.scrollIntoView({
+ 											block: "nearest",
+@@ -1352,6 +1353,328 @@
+ 		* section, each once its slot declaration is on the ledger.
+ 		* @param ctx - client root context.
+ 		*/
++		//#region KokonaHarness run-mode row
++		const KOKONA_RUNMODE_CSS = ".knRunGroup{border-bottom:.5px solid var(--dsw-alias-border-l2);flex-direction:column;gap:8px;padding:16px 0;display:flex}.knRunTitle{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}.knRunCubeRow{flex-wrap:wrap;align-items:stretch;gap:8px;display:flex}.knRunCube{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-xl);font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;flex-direction:column;flex:180px;justify-content:center;align-items:center;gap:4px;padding:18px 20px;font-size:14px;line-height:22px;display:flex}.knRunCube:hover:not(.knRunSelected){background:var(--dsw-alias-interactive-bg-hover)}.knRunSelected{background:var(--dsw-alias-bg-module-platform);border-color:var(--dsw-static-neutral-bluish-400)}.knRunDesc{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-align:center}.knRunState{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.knRunPanel{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 2px}.knRunBtn{border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-module-platform);height:32px;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;align-items:center;gap:6px;padding:0 12px;font-size:13px;display:inline-flex}.knRunBtn:hover{background:var(--dsw-alias-interactive-bg-hover)}.knRunBadge{border-radius:999px;padding:1px 8px;font-size:11px;line-height:18px;background:color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent);color:var(--dsw-alias-label-secondary)}.knRunBadgeGood{color:#7ec8a0}.knRunBadgeWarn{color:var(--dsw-alias-label-tertiary)}";
++		if (typeof document !== "undefined" && document.querySelector("style[data-kokona-runmode]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.kokonaRunmode = "";
++			tag.textContent = KOKONA_RUNMODE_CSS;
++			document.head.appendChild(tag);
++		}
++		function kokonaBridge() {
++			try {
++				return typeof KokonaBridge !== "undefined" ? KokonaBridge : null;
++			} catch (error) {
++				return null;
++			}
++		}
++		function kokonaInfo() {
++			const bridge = kokonaBridge();
++			try {
++				return bridge === null ? null : JSON.parse(bridge.runModeInfo() || "{}");
++			} catch (error) {
++				return null;
++			}
++		}
++		function KokonaRunModeRow() {
++			const bridge = kokonaBridge();
++			const [info, setInfo] = (0, react.useState)(() => kokonaInfo());
++			(0, react.useEffect)(() => {
++				if (bridge === null) return void 0;
++				const timer = setInterval(() => {
++					setInfo(kokonaInfo());
++				}, 1500);
++				return () => clearInterval(timer);
++			}, [bridge]);
++			if (info === null) return null;
++			const mode = info.mode || "normal";
++			const channel = info.effective || "normal";
++			const advancedReady = !!(info.rootGranted || info.shizukuGranted);
++			let summary;
++			if (mode === "advanced") summary = channel === "root" ? "高级模式 · Root" : channel === "shizuku" ? "高级模式 · Shizuku" : "高级模式不可用，当前按普通模式运行";
++			else if (mode === "accessibility") summary = info.accessibility ? "无障碍模式 · 界面自动化已就绪" : "无障碍模式 · 服务尚未开启";
++			else summary = "普通模式 · 应用沙箱内运行";
++			const cubes = [
++				{ id: "normal", label: "普通模式", desc: "无需 Root / Shizuku" },
++				{ id: "accessibility", label: "无障碍模式", desc: "界面自动化、手势与截图" },
++				{ id: "advanced", label: "高级模式", desc: "Shizuku 与 Root" }
++			];
++			const badges = [
++				{ label: info.rootGranted ? "Root 已授权" : info.suFound ? "Root 未授权" : "无 Root", good: !!info.rootGranted },
++				{ label: info.shizukuGranted ? "Shizuku 已授权" : info.shizukuInstalled ? (info.shizukuRunning ? "Shizuku 未授权" : "Shizuku 未运行") : "未安装 Shizuku", good: !!info.shizukuGranted },
++				{ label: info.accessibility ? "无障碍已开启" : "无障碍未开启", good: !!info.accessibility }
++			];
++			const select = (id) => {
++				if (bridge !== null) bridge.setRunMode(id);
++			};
++			const action = (name) => {
++				if (bridge !== null && typeof bridge[name] === "function") bridge[name]();
++			};
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: "knRunGroup",
++				children: [
++					(0, react_jsx_runtime.jsx)("div", { className: "knRunTitle", children: "运行模式" }),
++					(0, react_jsx_runtime.jsx)("div", {
++						className: "knRunCubeRow",
++						children: cubes.map((cube) => (0, react_jsx_runtime.jsxs)("button", {
++							type: "button",
++							className: clsx("knRunCube", mode === cube.id && "knRunSelected"),
++							"aria-pressed": mode === cube.id,
++							onClick: () => select(cube.id),
++							children: [
++								(0, react_jsx_runtime.jsx)("span", { children: cube.label }),
++								(0, react_jsx_runtime.jsx)("span", { className: "knRunDesc", children: cube.desc })
++							]
++						}, cube.id))
++					}),
++					(0, react_jsx_runtime.jsxs)("div", { className: "knRunState", children: [
++						summary,
++						"  ",
++						badges.map((badge, index) => (0, react_jsx_runtime.jsx)("span", {
++							className: clsx("knRunBadge", badge.good && "knRunBadgeGood"),
++							children: badge.label
++						}, index))
++					] }),
++					mode === "advanced" ? (0, react_jsx_runtime.jsxs)("div", { className: "knRunPanel", children: [
++						(0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "knRunBtn",
++							onClick: () => action("requestRoot"),
++							children: info.rootGranted ? "Root 已授权" : info.suFound ? "授权 Root" : "未检测到 Root"
++						}),
++						(0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "knRunBtn",
++							onClick: () => action(info.shizukuInstalled ? "requestShizuku" : "openShizuku"),
++							children: info.shizukuGranted ? "Shizuku 已授权" : info.shizukuInstalled ? "授权 Shizuku" : "安装 / 打开 Shizuku"
++						}),
++						(0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "knRunBtn",
++							onClick: () => action("openAccessibility"),
++							children: "无障碍能力设置"
++						})
++					] }) : null,
++					mode === "accessibility" ? (0, react_jsx_runtime.jsxs)("div", { className: "knRunPanel", children: [
++						(0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "knRunBtn",
++							onClick: () => action("openAccessibility"),
++							children: info.accessibility ? "无障碍已开启" : "去开启无障碍服务"
++						})
++					] }) : null,
++					mode === "advanced" && !advancedReady ? (0, react_jsx_runtime.jsx)("div", { className: "knRunDesc", style: { textAlign: "left" }, children: "没有可用的特权通道时，引擎仍会以普通模式稳定运行。" }) : null,
++					(0, react_jsx_runtime.jsxs)("div", { className: "knRunPanel", children: [
++						(0, react_jsx_runtime.jsx)("div", {
++							className: "knRunDesc",
++							style: { width: "100%", textAlign: "left" },
++							children: "KNHPlus：模型可调用 android_* 工具操作界面、读取通知、控制媒体/音量/亮度、朗读与截图。"
++						}),
++						(0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "knRunBtn",
++							onClick: () => action("openNotificationAccess"),
++							children: info.notification ? "通知使用权已开启" : "开启通知使用权"
++						}),
++						(0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "knRunBtn",
++							onClick: () => action("openWriteSettings"),
++							children: info.writeSettings ? "已可修改系统设置" : "允许修改系统设置（亮度）"
++						})
++					] })
++				]
++			});
++		}
++		//#endregion
++		//#region KokonaHarness capability permissions
++		const KOKONA_PERMISSION_CSS = ".knPermGroup{flex-direction:column;gap:10px;padding:4px 0 16px;display:flex}.knPermIntro{text-align:left}.knPermList{flex-direction:column;gap:8px;display:flex}.knPermRow{border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-lg);flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;display:flex}.knPermText{flex-direction:column;gap:2px;min-width:180px;flex:1;display:flex}.knPermName{color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px}.knPermDesc{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:17px}.knPermModes{flex:none;gap:4px;display:inline-flex}.knPermMode{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-sm);background:0 0;color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;padding:3px 10px;font-size:12px;line-height:18px}.knPermMode:hover{background:var(--dsw-alias-interactive-bg-hover)}.knPermModeActive{background:var(--dsw-alias-bg-module-platform);border-color:var(--dsw-static-neutral-bluish-400);color:var(--dsw-alias-label-primary)}.knPermError{color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}@media (max-width:560px){.knPermText{min-width:100%}.knPermModes{width:100%}.knPermMode{flex:1}}";
++		if (typeof document !== "undefined" && document.querySelector("style[data-kokona-permissions]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.kokonaPermissions = "";
++			tag.textContent = KOKONA_PERMISSION_CSS;
++			document.head.appendChild(tag);
++		}
++		const KOKONA_PERMISSION_ITEMS = [
++			{ id: "screen", label: "读取屏幕", desc: "界面文字、节点树、前台应用与设备状态" },
++			{ id: "screenshot", label: "截图", desc: "读取当前屏幕画面，可能包含隐私内容" },
++			{ id: "input", label: "点击与输入", desc: "点击、长按、输入文字、滑动与手势" },
++			{ id: "system", label: "打开应用与系统操作", desc: "打开应用或设置、返回主页、锁屏等" },
++			{ id: "notifications_read", label: "读取通知", desc: "读取通知内容，可能包含验证码" },
++			{ id: "notifications_act", label: "通知操作", desc: "回复、忽略或点击通知按钮" },
++			{ id: "media", label: "媒体与音量亮度", desc: "播放控制、音量与亮度" },
++			{ id: "clipboard", label: "剪贴板", desc: "读取或写入剪贴板" },
++			{ id: "feedback", label: "语音与振动", desc: "TTS 朗读、振动与 Toast" }
++		];
++		const KOKONA_PERMISSION_MODES = [
++			{ id: "allow", label: "允许" },
++			{ id: "ask", label: "询问" },
++			{ id: "deny", label: "禁止" }
++		];
++		function kokonaPermissionSnapshot() {
++			const bridge = kokonaBridge();
++			try {
++				return bridge === null ? null : JSON.parse(bridge.androidPermissions() || "null");
++			} catch (error) {
++				return null;
++			}
++		}
++		function KokonaPermissionsSection() {
++			const bridge = kokonaBridge();
++			const [data, setData] = (0, react.useState)(() => kokonaPermissionSnapshot());
++			const [error, setError] = (0, react.useState)("");
++			(0, react.useEffect)(() => {
++				if (bridge === null) return void 0;
++				const timer = setInterval(() => setData(kokonaPermissionSnapshot()), 2e3);
++				return () => clearInterval(timer);
++			}, []);
++			const permissions = data && data.permissions ? data.permissions : {};
++			const change = (capability, nextMode) => {
++				if (bridge === null) {
++					setError("需要在 KokonaHarness App 内打开设置才能修改。");
++					return;
++				}
++				try {
++					bridge.setAndroidPermission(capability, nextMode);
++					setData((previous) => previous && previous.permissions ? {
++						...previous,
++						permissions: {
++							...previous.permissions,
++							[capability]: nextMode
++						}
++					} : previous);
++					setError("");
++				} catch (cause) {
++					setError(String(cause && cause.message ? cause.message : cause));
++				}
++			};
++			const restore = () => {
++				if (bridge === null) {
++					setError("需要在 KokonaHarness App 内打开设置才能修改。");
++					return;
++				}
++				try {
++					bridge.resetAndroidPermissions();
++					setData(kokonaPermissionSnapshot());
++					setError("");
++				} catch (cause) {
++					setError(String(cause && cause.message ? cause.message : cause));
++				}
++			};
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: "knPermGroup",
++				children: [
++					(0, react_jsx_runtime.jsx)("div", {
++						className: "knRunTitle",
++						children: "手机能力授权"
++					}, "title"),
++					(0, react_jsx_runtime.jsx)("div", {
++						className: "knRunDesc knPermIntro",
++						children: "只提供开关，不替你判断。允许=直接执行，询问=每次弹窗确认，禁止=模型调用会被拒绝。改完立即生效，模型不能自行修改。"
++					}, "intro"),
++					error !== "" ? (0, react_jsx_runtime.jsx)("div", {
++						className: "knPermError",
++						children: error
++					}, "error") : null,
++					(0, react_jsx_runtime.jsx)("div", {
++						className: "knPermList",
++						children: KOKONA_PERMISSION_ITEMS.map((item) => {
++							const mode = permissions[item.id] || "ask";
++							return (0, react_jsx_runtime.jsxs)("div", {
++								className: "knPermRow",
++								children: [
++									(0, react_jsx_runtime.jsxs)("div", {
++										className: "knPermText",
++										children: [
++											(0, react_jsx_runtime.jsx)("div", {
++												className: "knPermName",
++												children: item.label
++											}, "name"),
++											(0, react_jsx_runtime.jsx)("div", {
++												className: "knPermDesc",
++												children: item.desc
++											}, "desc")
++										]
++									}, "text"),
++									(0, react_jsx_runtime.jsx)("div", {
++										className: "knPermModes",
++										children: KOKONA_PERMISSION_MODES.map((entry) => (0, react_jsx_runtime.jsx)("button", {
++											type: "button",
++											className: clsx("knPermMode", mode === entry.id && "knPermModeActive"),
++											"aria-pressed": mode === entry.id,
++											onClick: () => change(item.id, entry.id),
++											children: entry.label
++										}, entry.id))
++									}, "modes")
++								]
++							}, item.id);
++						})
++					}, "list"),
++					(0, react_jsx_runtime.jsx)("div", {
++						className: "knRunPanel",
++						children: (0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "knRunBtn",
++							onClick: restore,
++							children: "恢复默认"
++						})
++					}, "panel")
++				]
++			});
++		}
++		function KokonaPermissionsPage() {
++			return (0, react_jsx_runtime.jsx)("div", {
++				className: GeneralSection_module_css_default.section,
++				children: (0, react_jsx_runtime.jsx)(KokonaPermissionsSection, {})
++			});
++		}
++		//#endregion
++		//#region KokonaHarness advanced environment section
++		/**
++		* The run-mode picker lives on its own settings page so it does not crowd
++		* the General section; the sidebar gets a separate row for it.
++		*/
++		function KokonaAdvancedSection() {
++			return (0, react_jsx_runtime.jsx)("div", {
++				className: GeneralSection_module_css_default.section,
++				children: (0, react_jsx_runtime.jsx)(KokonaRunModeRow, {})
++			});
++		}
++		//#endregion
++		//#region KokonaHarness settings terminal action
++		const KOKONA_TERMINAL_CSS = ".knTermBtn{box-sizing:border-box;height:28px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-sm);background:0 0;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;cursor:pointer;align-items:center;gap:6px;display:inline-flex}.knTermBtn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.knTermBtn:disabled{opacity:.4;cursor:default}.knTermGlyph{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1;color:var(--dsw-alias-label-secondary)}@media (max-width:560px){.knTermLabel{display:none}.knTermBtn{width:28px;padding:0;justify-content:center}}";
++		if (typeof document !== "undefined" && document.querySelector("style[data-kokona-terminal]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.kokonaTerminal = "";
++			tag.textContent = KOKONA_TERMINAL_CSS;
++			document.head.appendChild(tag);
++		}
++		/**
++		* Settings-header action that opens the session terminal, which is the
++		* Android PTY entry. It closes the settings modal first so the terminal
++		* column is not hidden underneath it.
++		*/
++		function KokonaTerminalAction({ available, useSession, openTerminal }) {
++			const session = useSession === void 0 ? void 0 : useSession((value) => value);
++			const enabled = available === true && session !== void 0;
++			return (0, react_jsx_runtime.jsxs)("button", {
++				type: "button",
++				className: "knTermBtn",
++				disabled: !enabled,
++				title: enabled ? "启动 DSH 终端" : "请先打开一个会话",
++				"aria-label": "启动 DSH 终端",
++				onClick: openTerminal,
++				children: [(0, react_jsx_runtime.jsx)("span", {
++					className: "knTermGlyph",
++					"aria-hidden": "true",
++					children: ">_"
++				}), (0, react_jsx_runtime.jsx)("span", {
++					className: "knTermLabel",
++					children: "终端"
++				})]
++			});
++		}
++		//#endregion
+ 		function apply(ctx) {
+ 			ctx.slots.inject("settings.general.item", () => ctx.slots.register({
+ 				name: "settings.general.item",
+@@ -1375,6 +1698,18 @@
+ 				order: 100,
+ 				locale: NS
+ 			}, CurrentVersionRow));
++			ctx.slots.inject("settings.section", () => ctx.slots.register({
++				name: "settings.section",
++				id: "kokona-advanced",
++				order: 50,
++				label: () => "环境高级设置"
++			}, KokonaAdvancedSection));
++			ctx.slots.inject("settings.section", () => ctx.slots.register({
++				name: "settings.section",
++				id: "kokona-permissions",
++				order: 51,
++				label: () => "手机权限"
++			}, KokonaPermissionsPage));
+ 			ctx.effect(() => ctx.locale.register(NS, {
+ 				zh,
+ 				en,
+@@ -1580,6 +1915,27 @@
+ 				locale: NS,
+ 				inject: documentInjected
+ 			}, SettingsDocumentAction));
++			const getSidebarRight = () => ctx.get("sidebarRight");
++			ctx.slots.inject("settings.action", () => ctx.slots.register({
++				name: "settings.action",
++				id: "kokona-terminal",
++				order: 10,
++				locale: NS,
++				inject: () => {
++					const sidebarRight = getSidebarRight();
++					return {
++						available: sidebarRight !== void 0,
++						hooks: sidebarRight === void 0 ? {} : { session: sidebarRight.mounted },
++						openTerminal: () => {
++							const target = getSidebarRight();
++							if (target === void 0) return;
++							if (target.mounted.getSnapshot() === void 0) return;
++							shellInstance.actions.close();
++							target.openTab("terminal");
++						}
++					};
++				}
++			}, KokonaTerminalAction));
+ 			ctx.slots.inject("settings.close", () => ctx.slots.register({
+ 				name: "settings.close",
+ 				locale: NS
