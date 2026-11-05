@@ -1,0 +1,8 @@
+{
+  "name": "knhplus-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "KNHPlus MCP server: Android-only capabilities for the KokonaHarness runtime",
+  "main": "server.mjs"
+}

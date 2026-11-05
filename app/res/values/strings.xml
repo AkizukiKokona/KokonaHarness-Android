@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KNH</string>
+    <string name="engine_running">KokonaHarness 正在运行</string>
+    <string name="engine_starting">KokonaHarness 正在启动引擎</string>
+    <string name="engine_installing">正在解压运行时（首次启动较慢）</string>
+    <string name="engine_error">引擎启动失败</string>
+    <string name="stop">停止</string>
+    <string name="retry">重试</string>
+    <string name="exit_hint">再按一次返回键退出</string>
+    <string name="accessibility_description">为模型提供界面自动化（查找、点击、输入、滚动）、手势与系统截图能力，仅在执行任务时读取当前界面。</string>
+</resources>

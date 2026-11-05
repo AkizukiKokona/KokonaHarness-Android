@@ -1,0 +1,393 @@
+#!/usr/bin/env bash
+# Assembles the arm64 runtime snapshot (Node + dsh + trimmed node_modules)
+# from the Termux packages and the npm tree under /workspace/build.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+BUILD="${BUILD_DIR:-/workspace/build}"
+EXT="$BUILD/termux-debs/ext"
+RT="$BUILD/runtime"
+NODE_MODULES="$BUILD/rt/node_modules"
+OUT_ASSETS="$ROOT/app/assets"
+
+NODE_BIN="$EXT/nodejs/data/data/com.termux/files/usr/bin/node"
+BASH_BIN="$EXT/bash/data/data/com.termux/files/usr/bin/bash"
+RG_BIN="$EXT/ripgrep/data/data/com.termux/files/usr/bin/rg"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+for f in "$NODE_BIN" "$BASH_BIN" "$RG_BIN"; do
+  [ -f "$f" ] || die "missing $f"
+done
+[ -d "$NODE_MODULES/@deepseek-ai/dsh" ] || die "missing dsh install tree"
+
+rm -rf "$RT"
+mkdir -p "$RT/bin" "$RT/lib" "$RT/lib/node_modules" "$OUT_ASSETS"
+
+copy() { cp -L "$1" "$2"; }
+
+copy "$NODE_BIN" "$RT/bin/node"
+copy "$BASH_BIN" "$RT/bin/bash"
+copy "$RG_BIN" "$RT/bin/rg"
+
+L() { echo "$EXT/$1/data/data/com.termux/files/usr/lib/$2"; }
+
+copy "$(L libicu libicudata.so.78.3)" "$RT/lib/libicudata.so.78"
+copy "$(L libicu libicui18n.so.78.3)" "$RT/lib/libicui18n.so.78"
+copy "$(L libicu libicuuc.so.78.3)"   "$RT/lib/libicuuc.so.78"
+copy "$(L openssl libcrypto.so.3)"     "$RT/lib/libcrypto.so.3"
+copy "$(L openssl libssl.so.3)"        "$RT/lib/libssl.so.3"
+copy "$(L libsqlite libsqlite3.so.3.54.1)" "$RT/lib/libsqlite3.so"
+copy "$(L zlib libz.so.1.3.2)"         "$RT/lib/libz.so.1"
+copy "$(L libffi libffi.so)"           "$RT/lib/libffi.so"
+copy "$(L c-ares libcares.so)"         "$RT/lib/libcares.so"
+copy "$(L libc++ libc++_shared.so)"    "$RT/lib/libc++_shared.so"
+copy "$(L libandroid-support libandroid-support.so)" "$RT/lib/libandroid-support.so"
+copy "$(L readline libreadline.so.8.3)" "$RT/lib/libreadline.so.8"
+copy "$(L libiconv libiconv.so)"       "$RT/lib/libiconv.so"
+copy "$(L pcre2 libpcre2-8.so)"        "$RT/lib/libpcre2-8.so"
+copy "$(L ncurses libncursesw.so.6.5)" "$RT/lib/libncursesw.so.6"
+
+mkdir -p "$RT/etc/tls"
+copy "$EXT/ca-certificates/data/data/com.termux/files/usr/etc/tls/cert.pem" "$RT/etc/tls/cert.pem"
+
+# Small CLI tools (bionic arm64 builds from the Termux packages).
+T() { echo "$EXT/$1/data/data/com.termux/files/usr/$2"; }
+
+for tool in jq less xxd tree entr curl git nano unzip; do
+  copy "$(T "$tool" "bin/$tool")" "$RT/bin/$tool"
+done
+copy "$(T openssl-tool bin/openssl)" "$RT/bin/openssl"
+
+# Shared libraries these tools link against; everything else (libssl,
+# libcrypto, pcre2, zlib, ncursesw, libiconv, libandroid-support) is already
+# copied above from the same repository snapshot.
+for pkg in jq oniguruma libbz2 libmagic libcurl libnghttp2 libnghttp3 libngtcp2 libssh2; do
+  for lib in "$(T "$pkg" lib)"/*.so*; do
+    [ -f "$lib" ] || continue
+    [ -L "$lib" ] && continue
+    base="${lib##*/}"
+    [ -e "$RT/lib/$base" ] || copy "$lib" "$RT/lib/$base"
+  done
+done
+# unzip links the SONAME, which the package ships only under its full version.
+for lib in "$RT/lib"/libbz2.so.1.0.*; do
+  [ -f "$lib" ] || continue
+  [ -e "$RT/lib/libbz2.so.1.0" ] || copy "$lib" "$RT/lib/libbz2.so.1.0"
+  break
+done
+
+# Extra small utilities: archive/compression, text conversion, inspection.
+copy "$(T zip bin/zip)" "$RT/bin/zip"
+copy "$(T xz-utils bin/xz)" "$RT/bin/xz"
+copy "$(T zstd bin/zstd)" "$RT/bin/zstd"
+copy "$(T gzip bin/gzip)" "$RT/bin/gzip"
+copy "$(T bzip2 bin/bzip2)" "$RT/bin/bzip2"
+copy "$(T bc bin/bc)" "$RT/bin/bc"
+copy "$(T bc bin/dc)" "$RT/bin/dc"
+copy "$(T dos2unix bin/dos2unix)" "$RT/bin/dos2unix"
+copy "$(T dos2unix bin/unix2dos)" "$RT/bin/unix2dos"
+copy "$(T file bin/file)" "$RT/bin/file"
+copy "$(T ncdu bin/ncdu)" "$RT/bin/ncdu"
+copy "$(T pv bin/pv)" "$RT/bin/pv"
+copy "$(T sqlite bin/sqlite3)" "$RT/bin/sqlite3"
+for tool in ps free uptime pgrep pkill pmap pidof pwdx watch sysctl; do
+  copy "$(T procps "bin/$tool")" "$RT/bin/$tool"
+done
+
+# SONAMEs that the packages only ship under their full version.
+copy "$(T liblzma lib/liblzma.so.5.8.4)" "$RT/lib/liblzma.so.5"
+copy "$(T libexpat lib/libexpat.so.1.13.1)" "$RT/lib/libexpat.so.1"
+copy "$(T zstd lib/libzstd.so.1.5.7)" "$RT/lib/libzstd.so.1"
+copy "$(T procps lib/libproc2.so)" "$RT/lib/libproc2.so"
+copy "$(T libandroid-glob lib/libandroid-glob.so)" "$RT/lib/libandroid-glob.so"
+
+# Decompress aliases are symlinks upstream (not supported by the in-app
+# extractor), so generate small shims that resolve the runtime at run time.
+shim() {
+  bin="$1"; flags="$2"; name="$3"
+  cat > "$RT/bin/$name" <<SH
+#!/system/bin/sh
+rt="\${KOKONA_RUNTIME:-}"
+if [ -z "\$rt" ]; then
+  if [ "\${0%/*}" != "\$0" ]; then rt="\${0%/*}/.."; else rt="\${PATH%%:*}/.."; fi
+fi
+exec "\$rt/bin/$bin" $flags "\$@"
+SH
+  chmod 0755 "$RT/bin/$name"
+}
+shim gzip  -d  gunzip
+shim gzip  -dc zcat
+shim bzip2 -d  bunzip2
+shim bzip2 -dc bzcat
+shim zstd  -d  unzstd
+shim zstd  -dc zstdcat
+shim xz    -d  unxz
+shim xz    -dc xzcat
+
+# Terminal capability database for less, nano and interactive bash.
+mkdir -p "$RT/share" "$RT/share/misc"
+cp -a "$(T ncurses share/terminfo)" "$RT/share/terminfo"
+copy "$(T libmagic share/misc/magic.mgc)" "$RT/share/misc/magic.mgc"
+
+# Trimmed git: the main binary, the real libexec helpers that are not builtins
+# (HTTPS transport), tiny wrappers for builtin helpers, and init templates.
+# Upstream ships 181 libexec entries as full ~2-4 MB copies; only these are
+# needed, which keeps the runtime ~13 MB smaller.
+GIT_CORE="$RT/libexec/git-core"
+mkdir -p "$GIT_CORE" "$RT/share/git-core"
+cp -a "$(T git share/git-core/templates)" "$RT/share/git-core/templates"
+copy "$(T git libexec/git-core/git-remote-http)" "$GIT_CORE/git-remote-http"
+copy "$(T git libexec/git-core/git-remote-http)" "$GIT_CORE/git-remote-https"
+for helper in credential-store credential-cache credential-cache--daemon \
+              upload-pack receive-pack upload-archive; do
+  printf '#!/system/bin/sh\nexec "${KOKONA_RUNTIME:-${PATH%%%%:*}/..}/bin/git" %s "$@"\n' "$helper" \
+    > "$GIT_CORE/git-$helper"
+done
+# git-submodule additionally needs the 2 MB sh-i18n--envsubst helper, so that
+# script (and its shell-script family) is omitted to keep the runtime small.
+chmod 0755 "$GIT_CORE"/*
+
+# Node module tree: strip symlinks and non-runtime artefacts.
+cp -a "$NODE_MODULES/." "$RT/lib/node_modules/"
+rm -rf "$RT/lib/node_modules/.bin"
+find "$RT/lib/node_modules" -type l -delete
+
+# ripgrep is selected by process.platform/arch at require time. Node on
+# Android reports platform "android", so only the android-arm64 package is
+# resolvable there; the glibc linux packages never load.
+rm -rf "$RT/lib/node_modules/@vscode/ripgrep-linux-x64" \
+       "$RT/lib/node_modules/@vscode/ripgrep-linux-arm64"
+RG_PKG="$RT/lib/node_modules/@vscode/ripgrep-android-arm64"
+mkdir -p "$RG_PKG/bin"
+cp "$RG_BIN" "$RG_PKG/bin/rg"
+RG_VERSION=$(node -p "require('$RT/lib/node_modules/@vscode/ripgrep/package.json').version")
+cat > "$RG_PKG/package.json" <<JSON
+{
+  "name": "@vscode/ripgrep-android-arm64",
+  "version": "$RG_VERSION",
+  "description": "ripgrep binary for Android arm64 (Termux build)",
+  "bin": { "rg": "bin/rg" }
+}
+JSON
+
+# Desktop native payloads are never loadable on Android (Node reports
+# platform "android", arch "arm64"): the dsh 0.2.2 tree ships linux-x64
+# builds of sherpa-onnx, sharp/libvips and koffi, which only bloat the APK.
+rm -rf "$RT/lib/node_modules/sherpa-onnx-linux-x64" \
+       "$RT/lib/node_modules/@img/sharp-linux-x64" \
+       "$RT/lib/node_modules/@img/sharp-libvips-linux-x64" \
+       "$RT/lib/node_modules/@koromix/koffi-linux-x64"
+
+# pnpm bootstrapper: `dsh plugin add/remove` forwards to pnpm on PATH. pnpm 12
+# ships a self-contained bionic arm64 binary for Android, so the runtime carries
+# the native build instead of the JS package (which still forwarded `view` to
+# npm and broke the plugin market).
+PNPM_VERSION="${PNPM_VERSION:-12.16.1}"
+PNPM_DIR="$BUILD/pnpm-native"
+PNPM_TARBALL="$PNPM_DIR/pnpm-android-arm64.tgz"
+PNPM_INSTALLED=$(node -p "require('$PNPM_DIR/package/package.json').version" 2>/dev/null || true)
+if [ "$PNPM_INSTALLED" != "$PNPM_VERSION" ]; then
+  rm -rf "$PNPM_DIR"
+  mkdir -p "$PNPM_DIR"
+  curl -sSL -o "$PNPM_TARBALL" \
+    "https://registry.npmmirror.com/@pnpm/exe.android-arm64/-/exe.android-arm64-$PNPM_VERSION.tgz"
+  tar -xzf "$PNPM_TARBALL" -C "$PNPM_DIR"
+fi
+mkdir -p "$RT/lib/node_modules/@pnpm/exe.android-arm64"
+cp -a "$PNPM_DIR/package/." "$RT/lib/node_modules/@pnpm/exe.android-arm64/"
+
+# dshmarket: built-in plugin market. It is a regular dsh bundle; the profile
+# seed selects it, and its two runtime dependencies are vendored so the
+# plugin works offline right after installation.
+MARKET_VERSION="${MARKET_VERSION:-1.73.10}"
+MARKET_DIR="$BUILD/dshmarket"
+MARKET_INSTALLED=$(node -p "require('$MARKET_DIR/package/package.json').version" 2>/dev/null || true)
+mkdir -p "$MARKET_DIR"
+if [ "$MARKET_INSTALLED" != "$MARKET_VERSION" ]; then
+  ( cd "$MARKET_DIR" && rm -rf package && curl -sSL -o dshmarket.tgz \
+      "https://registry.npmmirror.com/dshmarket/-/dshmarket-$MARKET_VERSION.tgz" && tar -xzf dshmarket.tgz )
+fi
+mkdir -p "$RT/lib/node_modules/dshmarket"
+cp -a "$MARKET_DIR/package/." "$RT/lib/node_modules/dshmarket/"
+find "$RT/lib/node_modules/dshmarket" -type l -delete
+
+UNDICI_VERSION="${UNDICI_VERSION:-7.30.1}"
+UNDICI_DIR="$BUILD/dshmarket/vendor/undici"
+UNDICI_INSTALLED=$(node -p "require('$UNDICI_DIR/package/package.json').version" 2>/dev/null || true)
+mkdir -p "$UNDICI_DIR"
+if [ "$UNDICI_INSTALLED" != "$UNDICI_VERSION" ]; then
+  ( cd "$UNDICI_DIR" && rm -rf package && curl -sSL -o undici.tgz \
+      "https://registry.npmmirror.com/undici/-/undici-$UNDICI_VERSION.tgz" && tar -xzf undici.tgz )
+fi
+mkdir -p "$RT/lib/node_modules/dshmarket/node_modules/undici"
+cp -a "$UNDICI_DIR/package/." "$RT/lib/node_modules/dshmarket/node_modules/undici/"
+find "$RT/lib/node_modules/dshmarket/node_modules/undici" -type l -delete
+
+# CLI shims: resolve the runtime from $KOKONA_RUNTIME (set by the engine), or
+# from $0/PATH so a shell session inside the app works too.
+cat > "$RT/bin/pnpm" <<'SH'
+#!/system/bin/sh
+rt="${KOKONA_RUNTIME:-}"
+if [ -z "$rt" ]; then
+  if [ "${0%/*}" != "$0" ]; then rt="${0%/*}/.."; else rt="${PATH%%:*}/.."; fi
+fi
+exec "$rt/lib/node_modules/@pnpm/exe.android-arm64/pnpm" "$@"
+SH
+cat > "$RT/bin/dsh" <<'SH'
+#!/system/bin/sh
+rt="${KOKONA_RUNTIME:-}"
+if [ -z "$rt" ]; then
+  if [ "${0%/*}" != "$0" ]; then rt="${0%/*}/.."; else rt="${PATH%%:*}/.."; fi
+fi
+exec "$rt/bin/node" "$rt/lib/node_modules/@deepseek-ai/dsh/lib/bin.js" "$@"
+SH
+
+# Python 3.15.2, cross-compiled with the Android NDK against bionic arm64.
+# CPython blocks sem_open/shm_open on Android, so _multiprocessing and
+# _posixshmem are intentionally absent; tkinter is absent because Android has
+# no Tk. Everything else (ssl, sqlite3, ctypes/ffi, curses, readline, zlib,
+# bz2, lzma, expat, hash pools) is built in.
+PY_SRC="${PY_SRC:-$BUILD/py-build/pyinstall}"
+[ -x "$PY_SRC/bin/python3.15" ] || die "missing python build in $PY_SRC"
+[ -f "$PY_SRC/lib/libpython3.15.so" ] || die "missing libpython3.15.so"
+
+mkdir -p "$RT/python/bin" "$RT/python/lib"
+copy "$PY_SRC/bin/python3.15" "$RT/python/bin/python3.15"
+# libpython lives in $RT/lib so the engine's global LD_LIBRARY_PATH resolves it
+# even when a venv symlink execs $RT/python/bin/python3.15 directly.
+copy "$PY_SRC/lib/libpython3.15.so" "$RT/lib/libpython3.15.so"
+cp -a "$PY_SRC/lib/python3.15" "$RT/python/lib/"
+# 裁剪：测试套件、IDLE、turtle 示例、pydoc 数据，以及仅供测试用的扩展模块
+rm -rf "$RT/python/lib/python3.15/test" "$RT/python/lib/python3.15/idlelib" \
+       "$RT/python/lib/python3.15/turtledemo" "$RT/python/lib/python3.15/pydoc_data"
+find "$RT/python/lib/python3.15/lib-dynload" -maxdepth 1 \
+     \( -name "_test*" -o -name "_ctypes_test*" \) -delete
+chmod 0755 "$RT/python/bin/python3.15"
+
+# Python entry points. The interpreter locates its prefix from its own path
+# ($RT/python/bin/python3.15 -> $RT/python/lib/python3.15), so PYTHONHOME must
+# stay unset: exporting it makes venv ignore pyvenv.cfg and breaks the venv.
+cat > "$RT/bin/python3" <<'SH'
+#!/system/bin/sh
+rt="${KOKONA_RUNTIME:-}"
+if [ -z "$rt" ]; then
+  if [ "${0%/*}" != "$0" ]; then rt="${0%/*}/.."; else rt="${PATH%%:*}/.."; fi
+fi
+export LD_LIBRARY_PATH="$rt/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+if [ -z "${SSL_CERT_FILE:-}" ]; then export SSL_CERT_FILE="$rt/etc/tls/cert.pem"; fi
+exec "$rt/python/bin/python3.15" "$@"
+SH
+for alias in python python3.15; do
+  sed "s|exec \"\$rt/python/bin/python3.15\" \"\$@\"|exec \"\$rt/bin/python3\" \"\$@\"|" \
+    "$RT/bin/python3" > "$RT/bin/$alias"
+done
+for alias in pip pip3; do
+  sed "s|exec \"\$rt/python/bin/python3.15\" \"\$@\"|exec \"\$rt/bin/python3\" -m pip \"\$@\"|" \
+    "$RT/bin/python3" > "$RT/bin/$alias"
+done
+
+# System screenshot bridge: screencap is unusable from an app UID, so route the
+# call through the accessibility service via the app's loopback endpoint.
+cat > "$RT/bin/screencap" <<'SH'
+#!/system/bin/sh
+rt="${KOKONA_RUNTIME:-}"
+run="${KOKONA_APP_RUN:-}"
+if [ -z "$rt" ]; then
+  if [ "${0%/*}" != "$0" ]; then rt="${0%/*}/.."; else rt="${PATH%%:*}/.."; fi
+fi
+if [ -z "$run" ] || [ ! -f "$run/screenshot.port" ]; then
+  echo "screencap: 截图服务未就绪" >&2
+  exit 1
+fi
+port=$(cat "$run/screenshot.port")
+token=$(cat "$run/screenshot.token")
+out=""
+for a in "$@"; do
+  case "$a" in -p|-h|-d|-t|-w|-g) ;; *) [ -z "$out" ] && out="$a" ;; esac
+done
+url="http://127.0.0.1:$port/screenshot?token=$token"
+if [ -z "$out" ]; then
+  exec "$rt/bin/curl" -sS "$url"
+fi
+"$rt/bin/curl" -sS -o "$out" "$url"
+SH
+chmod 0755 "$RT/bin/screencap"
+
+# Privileged shell through Shizuku (advanced mode). Runs as the shell user.
+cat > "$RT/bin/knhsh" <<'SH'
+#!/system/bin/sh
+rt="${KOKONA_RUNTIME:-}"
+run="${KOKONA_APP_RUN:-}"
+if [ -z "$rt" ]; then
+  if [ "${0%/*}" != "$0" ]; then rt="${0%/*}/.."; else rt="${PATH%%:*}/.."; fi
+fi
+if [ -z "$run" ] || [ ! -f "$run/screenshot.port" ]; then
+  echo "knhsh: 服务未就绪" >&2
+  exit 1
+fi
+port=$(cat "$run/screenshot.port")
+token=$(cat "$run/screenshot.token")
+exec "$rt/bin/curl" -sS --get --data-urlencode "cmd=$*" \
+  "http://127.0.0.1:$port/exec?token=$token"
+SH
+chmod 0755 "$RT/bin/knhsh"
+
+chmod 0755 "$RT/bin/"*
+chmod 0755 "$RT/lib"/*.so
+chmod 0755 "$RG_PKG/bin/rg"
+chmod 0755 "$RT/lib/node_modules/@pnpm/exe.android-arm64/pnpm"
+
+# dsh-thinking-slider: built-in bundle that adds the reasoning-effort slider.
+SLIDER_VERSION="${SLIDER_VERSION:-0.3.4}"
+SLIDER_DIR="$BUILD/thinking-slider"
+SLIDER_INSTALLED=$(node -p "require('$SLIDER_DIR/package/package.json').version" 2>/dev/null || true)
+mkdir -p "$SLIDER_DIR"
+if [ "$SLIDER_INSTALLED" != "$SLIDER_VERSION" ]; then
+  ( cd "$SLIDER_DIR" && rm -rf package && curl -sSL -o slider.tgz \
+      "https://registry.npmmirror.com/dsh-thinking-slider/-/dsh-thinking-slider-$SLIDER_VERSION.tgz" && tar -xzf slider.tgz )
+fi
+mkdir -p "$RT/lib/node_modules/dsh-thinking-slider"
+cp -a "$SLIDER_DIR/package/." "$RT/lib/node_modules/dsh-thinking-slider/"
+
+# KNHPlus: Android-only MCP server (accessibility UI automation, notifications,
+# media/volume/brightness, TTS) plus the bundled skill that documents it.
+mkdir -p "$RT/lib/node_modules/knhplus-mcp" "$RT/skills"
+cp -a "$ROOT/knhplus-mcp/." "$RT/lib/node_modules/knhplus-mcp/"
+cp -a "$ROOT/runtime-skills/." "$RT/skills/"
+
+# Trim build-only artifacts (tests, type declarations and TypeScript sources)
+# from vendored packages. Node never reads them at runtime, and they are the
+# largest compressible part of the bundle.
+find "$RT/lib/node_modules" -type d \
+  \( -name test -o -name tests -o -name __tests__ -o -name .github \) \
+  -prune -exec rm -rf {} + 2>/dev/null || true
+find "$RT/lib/node_modules" \( -name "*.d.ts" -o -name "*.d.mts" -o -name "*.d.cts" \) \
+  -delete 2>/dev/null || true
+rm -rf "$RT/lib/node_modules/zod/src" "$RT/lib/node_modules/openai/src"
+
+# Pre-seeded profile overrides: telemetry rows need packages we trimmed.
+mkdir -p "$ROOT/app/assets/seed"
+cat > "$ROOT/app/assets/seed/cordis.patch.yml" <<'YAML'
+- id: otel
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true
+YAML
+
+echo "packing $RT ..."
+TAR="$BUILD/runtime.tar"
+rm -f "$TAR"
+tar --format=pax -cf "$TAR" -C "$RT" .
+SIZE=$(stat -c %s "$TAR")
+echo "$SIZE" > "$OUT_ASSETS/runtime.size"
+# Exact number of regular-file bytes the extractor writes; used as the
+# denominator for the real extraction percentage (tar headers would skew it).
+DATA=$(find "$RT" -type f -printf '%s\n' | awk '{s+=$1} END{print s+0}')
+echo "$DATA" > "$OUT_ASSETS/runtime.bytes"
+
+rm -f "$OUT_ASSETS/runtime.tar.xz"
+xz -6 -T0 -c "$TAR" > "$OUT_ASSETS/runtime.tar.xz"
+rm -f "$TAR"
+
+echo "runtime.tar.xz: $(du -h "$OUT_ASSETS/runtime.tar.xz" | cut -f1) (raw $(numfmt --to=iec "$SIZE"))"

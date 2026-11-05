@@ -1,0 +1,15 @@
+# 构建产物
+KokonaHarness.apk
+*.apk
+*.idsig
+app/assets/runtime.tar.xz
+app/assets/runtime.bytes
+app/assets/runtime.size
+app/build/
+build/
+.gradle/
+local.properties
+*.iml
+
+# 运行时解包产物
+runtime/
