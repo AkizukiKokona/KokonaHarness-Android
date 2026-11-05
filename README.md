@@ -66,27 +66,35 @@ KokonaHarness/
 ├── branding/                      # 品牌矢量与说明
 ├── assets-src/                    # 背景等源资源
 ├── build-runtime.sh               # 组装 arm64 运行时快照
+├── build-nodepty.sh               # 交叉编译 node-pty（NDK + Termux 头文件）
 ├── build.sh                       # aapt2 + javac + d8 + zipalign + apksigner
+├── runtime-patches/               # 运行时定制补丁存档（当前：设置页）
 └── README.md
 ```
 
-DSH UI 的定制补丁不落在本仓库源码内，而是打在 `node_modules/@deepseek-ai/...` 的构建树上，构建时由 `build-runtime.sh` 一起打包；重要补丁清单见本文末“运行时定制”。
+DSH UI 的定制补丁主要打在 `node_modules/@deepseek-ai/...` 的构建树上，构建时由 `build-runtime.sh` 一起打包；设置页补丁同时存档在 `runtime-patches/`，其余清单见本文末“运行时定制”。
 
 ## 构建
 
 ```bash
 # 1) 准备 /workspace/build/rt/node_modules（npm 安装 @deepseek-ai/dsh 后打入定制补丁）
-# 2) 组装运行时（产出 app/assets/runtime.tar.xz）
+# 2) 交叉编译 Android PTY（NDK 27.2 + Termux node 头文件）
+./build-nodepty.sh
+
+# 3) 组装运行时（产出 app/assets/runtime.tar.xz）
 ./build-runtime.sh
 
-# 3) 打包 APK
+# 4) 打包 APK
 ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 
 `build-runtime.sh` 会自动：
 - 复制 Termux bionic arm64 的 node/bash/rg 与依赖库；
 - 复制 `node_modules`，删除 `.bin` 与符号链接；
-- 移除 Linux 桌面专属的 ripgrep 包；
+- 移除 Linux 桌面专属的 ripgrep、sherpa-onnx、sharp、koffi 二进制；
+- 移除 Android 无法使用的 `libreoffice-kit-wasm`（约 146MB）；
+- 清理 `.d.ts` 与嵌套重复的 `zod/src`；
+- 保留 `node-pty` 的 `android-arm64` / `linux-arm64` 预编译；
 - 装入 pnpm 原生 arm64 与 dshmarket；
 - 写入 CLI shim（`dsh`、`pnpm`、`gunzip` 等）。
 
@@ -108,31 +116,28 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 
 ## 已知限制
 
-- **glibc 预编译包不可用**：官方 `node-pty`、`sherpa-onnx`、`libreoffice-kit` 的 Linux 二进制是 glibc 的，bionic 无法加载。Android 上图像走 `sharp-wasm32`；语音、办公转换默认不可用。
-- **Office 技能**：`dsh-skill-office` 的文档处理全部依赖 `libreoffice-kit`，而 kit 在 `process.platform === "android"` 时明确拒绝启动。因此随包的 `libreoffice-kit-wasm`（约 146MB）在 Android 上是纯死重。
-- **终端 PTY**：`node-pty` 无 Android 预编译，终端标签需要自行编译 `prebuilds/android-arm64/pty.node`。
+- **glibc 预编译包不可用**：官方 `sherpa-onnx`、`libreoffice-kit` 的 Linux 二进制是 glibc 的，bionic 无法加载。Android 上图像走 `sharp-wasm32`；语音、办公转换默认不可用。
+- **Office 技能**：`dsh-skill-office` 的文档处理全部依赖 `libreoffice-kit`，而 kit 在 `process.platform === "android"` 时明确拒绝启动。因此随包的 `libreoffice-kit-wasm`（约 146MB）在 Android 上是纯死重，已从运行时移除。
+- **终端 PTY**：已用 NDK 交叉编译 `node-pty` 的 N-API 模块（`prebuilds/android-arm64/pty.node`），不再依赖上游预编译。
 - **Android 10+ 执行限制**：依赖 `targetSdk 28` 的兼容豁免才能从 app 私有目录 exec/加载本地二进制。
 
-## 待实现（本轮）
+## 本轮进度
 
-1. **设置页右上角终端按钮**
-   - 在 `settings.action` 槽位注册一个“终端”按钮（位于设置面板右上角、关闭按钮左侧）。
-   - 点击后：若当前有会话 → 关闭设置面板并 `ctx.sidebarRight.openTab("terminal")`；若无会话 → 按钮禁用并提示先打开会话。
-   - 该按钮作为 PTY 入口，配合下一项的 `node-pty` 使用。
-   - 移动端适配：窄屏隐藏文字仅留图标/符号，避免与关闭按钮挤压。
+1. ✅ **设置页右上角终端按钮**
+   - 在 `settings.action` 槽位注册“终端”按钮（设置面板右上角、关闭按钮左侧）。
+   - 点击后：若当前有会话 → 关闭设置面板并 `sidebarRight.openTab("terminal")`；无会话 → 按钮禁用。
+   - 窄屏只留 `>_` 符号，避免与关闭按钮挤压。
 
-2. **为 Android 编译 node-pty**
-   - 目标：`node-pty@1.2.0-beta.15` 的 `pty.node`（N-API，ABI 稳定）。
-   - 依据：bionic `<pty.h>` 自 API 23 起提供 `openpty` / `forkpty`；`node-pty` 加载顺序会查 `prebuilds/android-arm64/pty.node`，无需改 JS。
-   - 构建：Android NDK `aarch64-linux-android27-clang++` + Termux node 头文件 + `node-addon-api`，输出到 `node_modules/node-pty/prebuilds/android-arm64/pty.node`。
-   - 注意：Android 上不能链接 `-lutil`（相关函数在 libc）；运行时可提供 `libc++_shared.so`。
+2. ✅ **为 Android 编译 node-pty**
+   - `node-pty@1.2.0-beta.15` 的 N-API 模块，已编译为 `prebuilds/android-arm64/pty.node`（同时放置 `linux-arm64` 以兼容 Termux Node 的平台报告）。
+   - 工具链：NDK 27.2 `aarch64-linux-android27-clang++` + Termux Node 头文件 + `node-addon-api`，由 [build-nodepty.sh](file:///workspace/KokonaHarness/build-nodepty.sh) 复现。
+   - 产物仅依赖 `libc/libm/libdl`，无需额外共享库。
 
-3. **包体瘦身**
-   - 移除 Android 不可用的 `os`/`cpu` 限定依赖（办公 WASM、linux 原生二进制）。
-   - 清理 `@deepseek-ai` 嵌套依赖中的重复 `zod` 源码（约 147MB），以及 `.d.ts`、测试、文档。
-   - 目标：APK 显著小于当前 133,367,208 字节（约 127 MiB），并低于 DSH Go 的 183.8 MiB。
+3. ✅ **包体瘦身**
+   - 移除办公 WASM（146MB）、Linux 桌面原生二进制、`.d.ts`、嵌套 `zod/src`。
+   - 结果：runtime 原始 606MB / 压缩 90MB；APK 94,664,104 字节（约 90.3 MiB），低于 DSH Go 的 183.8 MiB。
 
-4. **软键盘遮挡布局（WebView / 浏览器）**
+4. ⏳ **软键盘遮挡布局（WebView / 浏览器）**
    - 原生层：`AndroidManifest` 已设置 `adjustResize`；对忽略该模式的 OEM，用 `WindowInsetsCompat` 监听 IME inset，给根容器补底部 padding，并向 WebView 派发 `resize`。
    - Web 层：注入 `visualViewport` 的 `resize`/`scroll` 监听，写入 CSS 变量 `--kn-keyboard-inset`；`focusin` 时对输入框执行 `scrollIntoView({ block: "center" })`。
    - 页面 meta：`interactive-widget=resizes-content`、`viewport-fit=cover`，配合 `env(safe-area-inset-bottom)`。
@@ -142,7 +147,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 
 构建树中已应用的品牌/移动端定制（升级 DSH 时需重新移植）：
 
-- `dsh-client-ui-settings-general`：移动端导航宽度、`title` 属性、环境高级设置页、手机权限页（九项 allow/ask/deny）。
+- `dsh-client-ui-settings-general`：移动端导航宽度、`title` 属性、环境高级设置页、手机权限页（九项 allow/ask/deny）、右上角终端入口。
 - `dsh-client-ui-sidebar`：收起为小 K，展开为完整 Kokona 签名 + HARNESS。
 - `dsh-client-ui-conversation`：居中布局、移除 Hero 小 K 标记。
 - `dsh-client-ui-brand-official`：品牌签名与 HARNESS pill。
