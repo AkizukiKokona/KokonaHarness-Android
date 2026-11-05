@@ -179,6 +179,24 @@ rm -rf "$RT/lib/node_modules/sherpa-onnx-linux-x64" \
        "$RT/lib/node_modules/@img/sharp-libvips-linux-x64" \
        "$RT/lib/node_modules/@koromix/koffi-linux-x64"
 
+# Office conversion is unavailable on Android: libreoffice-kit rejects
+# platform "android" before any engine loads, so the 146 MB WASM payload is
+# dead weight.
+rm -rf "$RT/lib/node_modules/@deepseek-ai/libreoffice-kit-wasm"
+
+# node-pty ships glibc/desktop prebuilds; Android uses the N-API build in
+# prebuilds/android-arm64 produced by build-nodepty.sh.
+rm -rf "$RT/lib/node_modules/node-pty/prebuilds/darwin-arm64" \
+       "$RT/lib/node_modules/node-pty/prebuilds/darwin-x64" \
+       "$RT/lib/node_modules/node-pty/prebuilds/linux-x64" \
+       "$RT/lib/node_modules/node-pty/prebuilds/win32-arm64" \
+       "$RT/lib/node_modules/node-pty/prebuilds/win32-x64"
+
+# Runtime never executes TypeScript declarations or the duplicated zod
+# sources npm leaves in nested installs.
+find "$RT/lib/node_modules" -type d -path "*/node_modules/zod/src" -prune -exec rm -rf {} +
+find "$RT/lib/node_modules" -name "*.d.ts" -delete
+
 # pnpm bootstrapper: `dsh plugin add/remove` forwards to pnpm on PATH. pnpm 12
 # ships a self-contained bionic arm64 binary for Android, so the runtime carries
 # the native build instead of the JS package (which still forwarded `view` to
