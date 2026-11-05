@@ -19,7 +19,7 @@ import java.util.Locale;
  */
 public final class RuntimeInstaller {
     /** Bump when the bundled runtime changes. */
-    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r27";
+    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r28";
 
     public interface Progress {
         void onProgress(float fraction, String message);

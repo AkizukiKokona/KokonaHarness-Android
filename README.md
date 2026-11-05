@@ -2,7 +2,7 @@
 
 把 DeepSeek Harness（DSH）装进 Android 手机的原生运行器。App 不依赖 PRoot、Ubuntu 容器或 Termux 安装，直接以 Android bionic 的 Node.js 运行完整 DSH 引擎，WebView 加载 DSH Web UI，并通过原生桥接把手机能力暴露给模型。
 
-当前版本：**1.1.2**（versionCode 112），内置运行时 **dsh-0.2.2-rc.1-r27**。
+当前版本：**1.2.0**（versionCode 120），内置运行时 **dsh-0.2.2-rc.1-r28**。
 
 ## 整体架构
 
@@ -42,11 +42,11 @@
 ```
 KokonaHarness/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 112 / versionName 1.1.2
+│   ├── AndroidManifest.xml        # versionCode 120 / versionName 1.2.0
 │   ├── java/com/knh/akizukikokona/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程管理
-│   │   ├── RuntimeInstaller.java  # 运行时解包/校验/替换（r27）
+│   │   ├── RuntimeInstaller.java  # 运行时解包/校验/替换（r28）
 │   │   ├── LocalBridgeServer.java # loopback HTTP：/policy /confirm /screenshot …
 │   │   ├── AndroidPermissions.java# 九项能力授权持久化
 │   │   ├── ConfirmationGate.java  # 原生确认弹窗
@@ -114,6 +114,25 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 
 `allow` 直接执行；`ask` 弹原生确认；`deny` 返回“权限已关闭”。模型通过 `android_policy` 只能读取当前状态。
 
+## 安全模型与边界
+
+**定位**：九项授权是“防误操作”的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
+
+已实施（1.2.0）：
+
+1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
+2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点“允许”后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
+3. **token 不再进 URL**：改为 `Authorization: Bearer`；控制文件权限从错误的全局可读修正为仅 owner 可读写。token 不进 WebView、不进日志。
+4. **确认框防轰炸**：用 `onResume`/`onPause` 判断真实可见性，不可见立即返回 `app_not_visible`，不再空等 45 秒；最多 3 个待处理请求，弹窗最小间隔 1.2 秒。
+5. **敏感 Bridge 方法加原生确认**：修改授权、恢复默认、切换运行模式、请求 Root/Shizuku 都会先弹原生框，网页脚本无法静默提权。
+
+已知边界（未覆盖）：
+
+- **fs 不在授权内**：`dsh-fs-local` 没有 allow/ask/deny 检查；DSH 权限 preset 在内核 < 5.13 时直接 `danger-full-access`。
+- **同 UID 信任边界**：bash/插件可读写 `kokona_permissions.xml`、token、runtime 中的 `server.mjs`；Root 模式下整个引擎以 root 启动，九项授权对 shell/fs 无约束力。
+- **审批绑定粒度**：`/confirm` 文案仍由调用方构造（含模型参数），grant 绑定的是“能力”而非单次具体动作。
+- **持久化未脱敏**：截图与无障碍文本会以明文进入 DSH 会话 JSONL；本轮未做字段级脱敏。
+
 ## 已知限制
 
 - **glibc 预编译包不可用**：官方 `sherpa-onnx`、`libreoffice-kit` 的 Linux 二进制是 glibc 的，bionic 无法加载。Android 上图像走 `sharp-wasm32`；语音、办公转换默认不可用。
@@ -135,13 +154,18 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 
 3. ✅ **包体瘦身**
    - 移除办公 WASM（146MB）、Linux 桌面原生二进制、`.d.ts`、嵌套 `zod/src`。
-   - 结果：runtime 原始 606MB / 压缩 90MB；APK 94,664,104 字节（约 90.3 MiB），低于 DSH Go 的 183.8 MiB。
+   - 结果：runtime 原始 606MB / 压缩 90MB；APK 94,684,584 字节（约 90.3 MiB），低于 DSH Go 的 183.8 MiB。
 
-4. ⏳ **软键盘遮挡布局（WebView / 浏览器）**
-   - 原生层：`AndroidManifest` 已设置 `adjustResize`；对忽略该模式的 OEM，用 `WindowInsetsCompat` 监听 IME inset，给根容器补底部 padding，并向 WebView 派发 `resize`。
-   - Web 层：注入 `visualViewport` 的 `resize`/`scroll` 监听，写入 CSS 变量 `--kn-keyboard-inset`；`focusin` 时对输入框执行 `scrollIntoView({ block: "center" })`。
-   - 页面 meta：`interactive-widget=resizes-content`、`viewport-fit=cover`，配合 `env(safe-area-inset-bottom)`。
-   - 目标：输入框与底部操作栏始终位于键盘上方，不改动 DSH 原生布局。
+4. ✅ **软键盘遮挡布局（WebView / 浏览器）**
+   - 页面 meta：`viewport-fit=cover` + `interactive-widget=resizes-content`。
+   - Web 层：`visualViewport` 的 `resize`/`scroll` 写入 `--kn-keyboard-inset`；`focusin` 时 `scrollIntoView({ block: "center" })`，260ms 延迟等键盘动画结束。
+   - 原生兜底：`setOnApplyWindowInsetsListener` 按 IME inset 给 WebView 补底部 padding；`adjustResize` 生效时 inset 已为 0，此路径自动无操作。
+   - 不改动 DSH 原生布局，插件无需感知。
+
+5. ✅ **安全加固（1.2.0）**
+   - Java 侧 `/plus` 独立复核 `action → capability`，`deny` 最终生效；`ask` 需一次性 120 秒 grant。
+   - token 改 `Authorization: Bearer`，控制文件 0600；确认框按真实前后台可见性判定，最多 3 个待处理、间隔 1.2 秒。
+   - 改授权、重置、切模式、请求 Root/Shizuku 均需原生确认，网页无法静默提权。
 
 ## 运行时定制
 
@@ -159,6 +183,6 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 
 ## 版本
 
-- App：1.1.2（112）
+- App：1.2.0（120）
 - DSH：0.2.2-rc.1
-- Runtime：dsh-0.2.2-rc.1-r27
+- Runtime：dsh-0.2.2-rc.1-r28

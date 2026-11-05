@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const SERVER_NAME = "knhplus";
-const SERVER_VERSION = "1.1.2";
+const SERVER_VERSION = "1.2.0";
 const runDir = process.env.KOKONA_APP_RUN || "";
 const log = (...args) => console.error("[knhplus]", ...args);
 
@@ -96,13 +96,17 @@ async function fetchPermissions() {
 async function callBridge(path, params = {}, timeoutMs = 20000) {
   const { port, token } = bridgeConfig();
   const url = new URL(`http://127.0.0.1:${port}${path}`);
-  url.searchParams.set("token", token);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, String(value));
     }
   }
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  // The token travels in a header so it never appears in a URL, proxy log or
+  // error message. Loopback traffic stays inside the app UID.
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(timeoutMs)
+  });
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
     try {
@@ -486,6 +490,7 @@ async function confirmOperation(name, args, capability) {
   try {
     const response = await callBridge("/confirm", {
       detail: describeOperation(name, args, capability),
+      capability,
       timeout: 45
     }, 60000);
     body = await response.json();
@@ -493,22 +498,34 @@ async function confirmOperation(name, args, capability) {
     throw new Error("无法弹出手机操作确认：" + (error && error.message ? error.message : String(error))
       + "。操作已取消；请先打开 KokonaHarness 应用，且不要自动重试。");
   }
-  if (body && body.allowed) return;
+  if (body && body.allowed && body.grant) return body.grant;
+  if (body && body.allowed) {
+    throw new Error("确认凭据缺失，操作已取消；请检查 App 与服务版本是否一致。");
+  }
   if (body && body.reason === "app_not_visible") {
     throw new Error("需要打开 KokonaHarness 应用并在弹窗中确认，操作已取消；不要自动重试。");
   }
   throw new Error("用户拒绝或确认超时，操作已取消；不要自动重试，除非用户明确要求。");
 }
 
-async function enforcePermission(name, args) {
+/**
+ * Resolves the user's grant for one capability. `ask` returns a single-use
+ * grant that the app verifies again on the actual request, so a denied or
+ * stale state cannot be reused.
+ */
+async function authorize(name, args) {
   const capability = CAPABILITY_FOR_TOOL[name];
-  if (!capability) return;
+  if (!capability) throw new Error(`工具没有声明能力：${name}`);
   const permissions = await fetchPermissions();
   const mode = permissions[capability] || "ask";
   if (mode === "deny") {
     throw new Error(`「${CAPABILITY_LABEL[capability] || capability}」权限已关闭；请在 App 设置 → 手机权限 中调整后重试。`);
   }
-  if (mode === "ask") await confirmOperation(name, args, capability);
+  if (mode === "ask") {
+    const grant = await confirmOperation(name, args, capability);
+    return { capability, grant };
+  }
+  return { capability };
 }
 
 async function runTool(name, args = {}) {
@@ -520,9 +537,9 @@ async function runTool(name, args = {}) {
       note: "授权由用户在 App 设置 → 手机权限 中调整，模型不能修改。"
     });
   }
-  await enforcePermission(name, args);
+  const auth = await authorize(name, args);
   if (name === "android_screenshot") {
-    const response = await callBridge("/screenshot");
+    const response = await callBridge("/screenshot", auth);
     const buffer = Buffer.from(await response.arrayBuffer());
     return {
       content: [{ type: "image", data: buffer.toString("base64"), mimeType: "image/png" }]
@@ -562,7 +579,7 @@ async function runTool(name, args = {}) {
   };
   const params = map[name];
   if (!params) throw new Error(`未知工具：${name}`);
-  const data = await callJson(params);
+  const data = await callJson({ ...params, ...auth });
   return toolResult(data);
 }
 

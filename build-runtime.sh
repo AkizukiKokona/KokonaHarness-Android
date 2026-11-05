@@ -347,7 +347,8 @@ fi
 port=$(cat "$run/screenshot.port")
 token=$(cat "$run/screenshot.token")
 exec "$rt/bin/curl" -sS --get --data-urlencode "cmd=$*" \
-  "http://127.0.0.1:$port/exec?token=$token"
+  -H "Authorization: Bearer $token" \
+  "http://127.0.0.1:$port/exec"
 SH
 chmod 0755 "$RT/bin/knhsh"
 

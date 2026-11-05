@@ -32,6 +32,7 @@ import rikka.shizuku.Shizuku;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -74,6 +75,17 @@ public class MainActivity extends Activity {
             "window.__KOKONA_PICK_CALLBACKS__[id]={resolve:resolve,reject:reject};" +
             "try{KokonaBridge.pickDirectory(id);}catch(e){delete window.__KOKONA_PICK_CALLBACKS__[id];reject(e);}" +
             "});}};" +
+            // Keyboard: keep the composer above the IME and expose the inset as a CSS
+            // variable for layouts that position themselves against the visual viewport.
+            "var kb=function(){try{var v=window.visualViewport;" +
+            "var h=Math.max(0,(window.innerHeight-(v?v.height:window.innerHeight))+(v?v.offsetTop:0));" +
+            "document.documentElement.style.setProperty('--kn-keyboard-inset',h+'px');}catch(e){}};" +
+            "window.addEventListener('resize',kb);" +
+            "if(window.visualViewport){window.visualViewport.addEventListener('resize',kb);" +
+            "window.visualViewport.addEventListener('scroll',kb);}" +
+            "document.addEventListener('focusin',function(e){setTimeout(function(){try{" +
+            "e.target.scrollIntoView({block:'center',behavior:'smooth'});}catch(x){}},260);},true);" +
+            "kb();" +
             "})();";
 
     private FrameLayout root;
@@ -96,7 +108,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.1.2";
+    private static final String APP_VERSION = "1.2.0";
 
     private EngineService.Listener engineListener;
 
@@ -224,6 +236,16 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 26) {
             web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         }
+        // Fallback for ROMs that ignore adjustResize: pad the WebView by the IME
+        // inset. When adjustResize works the inset is already consumed (bottom=0),
+        // so this stays a no-op there.
+        web.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
+                view.setPadding(0, 0, 0, Math.max(0, insets.getSystemWindowInsetBottom()));
+                return insets;
+            }
+        });
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -665,12 +687,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        ConfirmationGate.setVisible(this, false);
         if (web != null) web.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        ConfirmationGate.setVisible(this, true);
         windowReady = true;
         if (web != null) web.onResume();
         if (pendingPickResult != null) {
@@ -769,18 +793,35 @@ public class MainActivity extends Activity {
             return AndroidPermissions.json(MainActivity.this);
         }
 
+        /**
+         * Any script inside the WebView can call these methods, so the ones that
+         * change security posture ask the user in a native dialog first. The
+         * JavaScript side cannot forge the result.
+         */
+        private boolean confirmSensitive(String detail) {
+            return ConfirmationGate.request(detail, true, 30) == Boolean.TRUE;
+        }
+
         @JavascriptInterface
         public void setAndroidPermission(final String capability, final String mode) {
+            if (!AndroidPermissions.isCapability(capability)) return;
+            if (!"allow".equals(mode) && !"ask".equals(mode) && !"deny".equals(mode)) return;
+            String modeLabel = "allow".equals(mode) ? "允许"
+                    : "ask".equals(mode) ? "询问" : "禁止";
+            String detail = "将「" + AndroidPermissions.label(capability) + "」改为「" + modeLabel + "」？";
+            if (!confirmSensitive(detail)) return;
             AndroidPermissions.setMode(MainActivity.this, capability, mode);
         }
 
         @JavascriptInterface
         public void resetAndroidPermissions() {
+            if (!confirmSensitive("恢复全部手机权限的默认值？")) return;
             AndroidPermissions.reset(MainActivity.this);
         }
 
         @JavascriptInterface
         public void setRunMode(final String mode) {
+            if (!confirmSensitive("切换到运行模式「" + mode + "」？")) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -808,6 +849,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void requestRoot() {
+            if (!confirmSensitive("允许网页请求 Root 权限？")) return;
             new Thread(new Runnable() {
                 @Override
                 public void run() {
@@ -825,6 +867,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void requestShizuku() {
+            if (!confirmSensitive("允许网页请求 Shizuku 授权？")) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {

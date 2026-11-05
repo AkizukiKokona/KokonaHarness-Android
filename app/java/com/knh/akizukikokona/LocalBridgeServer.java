@@ -2,6 +2,7 @@ package com.knh.akizukikokona;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.File;
@@ -12,7 +13,14 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Loopback HTTP surface for the runtime.
@@ -28,11 +36,35 @@ public final class LocalBridgeServer {
 
     private static LocalBridgeServer instance;
 
+    private static final long APPROVAL_TTL_MS = 120_000L;
+
     private final Context context;
     private final String token;
+    private final Map<String, Approval> approvals = new ConcurrentHashMap<>();
     private ServerSocket socket;
     private Thread thread;
     private volatile boolean running;
+
+    /** A single-use grant issued by /confirm and consumed by the next /plus call. */
+    private static final class Approval {
+        final String capability;
+        final long expiresAt;
+
+        Approval(String capability, long expiresAt) {
+            this.capability = capability;
+            this.expiresAt = expiresAt;
+        }
+    }
+
+    private static final class Request {
+        final String target;
+        final Map<String, String> headers;
+
+        Request(String target, Map<String, String> headers) {
+            this.target = target;
+            this.headers = headers;
+        }
+    }
 
     private LocalBridgeServer(Context context) {
         this.context = context.getApplicationContext();
@@ -78,9 +110,13 @@ public final class LocalBridgeServer {
             out = new FileOutputStream(token);
             out.write(server.token.getBytes(StandardCharsets.UTF_8));
             out.close();
-            // The engine may run as root; keep both files readable but not world-readable.
-            port.setReadable(true, false);
-            token.setReadable(true, false);
+            // The engine runs in the same UID; root mode can read anything, but the
+            // file must never be readable by other apps. Owner-only, unlike the old
+            // setReadable(true, false) which actually granted global read.
+            port.setReadable(true, true);
+            port.setWritable(true, true);
+            token.setReadable(true, true);
+            token.setWritable(true, true);
         } catch (Exception error) {
             Log.w(TAG, "cannot write control files", error);
         }
@@ -116,18 +152,118 @@ public final class LocalBridgeServer {
         }
     }
 
+    /**
+     * Authoritative capability map for the bridge. The MCP server has its own copy
+     * for messaging, but the app decides: a request that declares a capability
+     * different from this table is refused, so a compromised Node process cannot
+     * relabel a state-changing action as a read-only one.
+     */
+    private static String requiredCapability(String action) {
+        if (action == null) return null;
+        switch (action) {
+            case "status":
+            case "ui":
+            case "find":
+            case "wait_for":
+            case "foreground":
+            case "windows":
+            case "screen":
+            case "device":
+            case "apps":
+                return AndroidPermissions.SCREEN;
+            case "click":
+            case "set_text":
+            case "scroll":
+            case "gesture":
+            case "node_action":
+                return AndroidPermissions.INPUT;
+            case "global":
+            case "open":
+            case "open_settings":
+                return AndroidPermissions.SYSTEM;
+            case "notifications":
+                return AndroidPermissions.NOTIFICATIONS_READ;
+            case "notification_action":
+            case "dismiss_notification":
+            case "dismiss_notifications":
+                return AndroidPermissions.NOTIFICATIONS_ACT;
+            case "media":
+            case "media_session":
+            case "volume":
+            case "brightness":
+                return AndroidPermissions.MEDIA;
+            case "clipboard":
+                return AndroidPermissions.CLIPBOARD;
+            case "toast":
+            case "vibrate":
+            case "speak":
+            case "tts_stop":
+                return AndroidPermissions.FEEDBACK;
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Applies the grant the user chose for this capability. `deny` is final here:
+     * the app refuses even when the caller presents a valid one-shot grant, so a
+     * stale approval cannot outlive a later "deny" in Settings.
+     *
+     * @return null when the request may proceed, otherwise the denial message.
+     */
+    private String authorizeCapability(String capability, String grant) {
+        String mode = AndroidPermissions.mode(context, capability);
+        if (AndroidPermissions.DENY.equals(mode)) {
+            return "「" + capability + "」权限已关闭";
+        }
+        if (AndroidPermissions.ALLOW.equals(mode)) {
+            if (grant != null) approvals.remove(grant);
+            return null;
+        }
+        if (grant == null) return "该能力需要确认";
+        Approval approval = approvals.remove(grant);
+        if (approval == null) return "确认凭据无效或已被使用";
+        if (approval.expiresAt < SystemClock.elapsedRealtime()) return "确认凭据已过期";
+        if (!capability.equals(approval.capability)) return "确认凭据与操作能力不匹配";
+        return null;
+    }
+
+    private static void deny(Socket socket, String message) {
+        org.json.JSONObject json = new org.json.JSONObject();
+        try {
+            json.put("ok", false);
+            json.put("error", message);
+        } catch (Exception ignored) {
+        }
+        respond(socket, 403, "application/json; charset=utf-8",
+                json.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String randomHex(int bytes) {
+        byte[] random = new byte[bytes];
+        new SecureRandom().nextBytes(random);
+        StringBuilder builder = new StringBuilder(bytes * 2);
+        for (byte value : random) builder.append(String.format(Locale.US, "%02x", value));
+        return builder.toString();
+    }
+
     private void handle(Socket client) {
         try (Socket socket = client) {
             socket.setSoTimeout(20000);
             InputStream input = socket.getInputStream();
-            String request = readRequest(input);
-            if (request == null || request.isEmpty()) return;
-            String[] parts = request.split(" ");
-            if (parts.length < 2) return;
-            Uri uri = Uri.parse(parts[1]);
+            Request request = readRequest(input);
+            if (request == null) return;
+            Uri uri = Uri.parse(request.target);
             String path = uri.getPath();
-            String supplied = uri.getQueryParameter("token");
-            if (supplied == null || !supplied.equals(token)) {
+            String supplied = request.headers.get("authorization");
+            if (supplied != null && supplied.startsWith("Bearer ")) {
+                supplied = supplied.substring("Bearer ".length()).trim();
+            } else {
+                supplied = request.headers.get("x-kokona-token");
+            }
+            if (supplied == null || !MessageDigest.isEqual(
+                    supplied.getBytes(StandardCharsets.UTF_8),
+                    token.getBytes(StandardCharsets.UTF_8))) {
                 respond(socket, 403, "text/plain", "forbidden".getBytes(StandardCharsets.UTF_8));
                 return;
             }
@@ -138,9 +274,11 @@ public final class LocalBridgeServer {
             }
             if ("/confirm".equals(path)) {
                 String detail = uri.getQueryParameter("detail");
-                if (detail == null || detail.trim().isEmpty()) {
+                String capability = uri.getQueryParameter("capability");
+                if (detail == null || detail.trim().isEmpty()
+                        || capability == null || !AndroidPermissions.isCapability(capability)) {
                     respond(socket, 400, "text/plain; charset=utf-8",
-                            "missing detail".getBytes(StandardCharsets.UTF_8));
+                            "missing detail or capability".getBytes(StandardCharsets.UTF_8));
                     return;
                 }
                 if (detail.length() > 800) detail = detail.substring(0, 800);
@@ -157,8 +295,16 @@ public final class LocalBridgeServer {
                     json.put("ok", true);
                     json.put("allowed", allowed != null && allowed);
                     json.put("risk", critical ? "critical" : "action");
-                    if (allowed == null) json.put("reason", "app_not_visible");
-                    else if (!allowed) json.put("reason", "denied_or_timeout");
+                    if (allowed == null) {
+                        json.put("reason", "app_not_visible");
+                    } else if (!allowed) {
+                        json.put("reason", "denied_or_timeout");
+                    } else {
+                        String grant = randomHex(16);
+                        approvals.put(grant, new Approval(capability,
+                                SystemClock.elapsedRealtime() + APPROVAL_TTL_MS));
+                        json.put("grant", grant);
+                    }
                 } catch (Exception ignored) {
                 }
                 respond(socket, 200, "application/json; charset=utf-8",
@@ -166,6 +312,12 @@ public final class LocalBridgeServer {
                 return;
             }
             if ("/screenshot".equals(path)) {
+                String denied = authorizeCapability(AndroidPermissions.SCREENSHOT,
+                        uri.getQueryParameter("grant"));
+                if (denied != null) {
+                    deny(socket, denied);
+                    return;
+                }
                 try {
                     byte[] png = ScreenshotAccessibilityService.capture();
                     respond(socket, 200, "image/png", png);
@@ -178,6 +330,17 @@ public final class LocalBridgeServer {
                 return;
             }
             if ("/plus".equals(path)) {
+                String required = requiredCapability(uri.getQueryParameter("action"));
+                String declared = uri.getQueryParameter("capability");
+                if (required == null || declared == null || !declared.equals(required)) {
+                    deny(socket, "能力声明不匹配或未知操作");
+                    return;
+                }
+                String denied = authorizeCapability(required, uri.getQueryParameter("grant"));
+                if (denied != null) {
+                    deny(socket, denied);
+                    return;
+                }
                 try {
                     String body = AndroidCapabilities.run(context, uri);
                     respond(socket, 200, "application/json; charset=utf-8",
@@ -224,22 +387,34 @@ public final class LocalBridgeServer {
         }
     }
 
-    private static String readRequest(InputStream input) throws Exception {
-        StringBuilder builder = new StringBuilder();
-        int state = 0;
-        byte[] buffer = new byte[1];
-        while (input.read(buffer) > 0) {
-            char c = (char) buffer[0];
-            if (c == '\r') continue;
-            if (c == '\n') {
-                if (builder.length() == 0) break;
-                state++;
-                if (state >= 1) break;
+    /** Reads the request line and headers so the token can travel in a header, not a URL. */
+    private static Request readRequest(InputStream input) throws Exception {
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        int value;
+        while ((value = input.read()) != -1) {
+            if (value == '\r') continue;
+            if (value == '\n') {
+                if (line.length() == 0) break;
+                lines.add(line.toString());
+                line.setLength(0);
+                if (lines.size() >= 40) break;
             } else {
-                builder.append(c);
+                line.append((char) value);
             }
         }
-        return builder.toString();
+        if (lines.isEmpty()) return null;
+        String[] parts = lines.get(0).split(" ");
+        if (parts.length < 2) return null;
+        Map<String, String> headers = new LinkedHashMap<>();
+        for (int i = 1; i < lines.size(); i++) {
+            String header = lines.get(i);
+            int colon = header.indexOf(':');
+            if (colon <= 0) continue;
+            headers.put(header.substring(0, colon).trim().toLowerCase(Locale.US),
+                    header.substring(colon + 1).trim());
+        }
+        return new Request(parts[1], headers);
     }
 
     private static void respond(Socket socket, int status, String type, byte[] body) {

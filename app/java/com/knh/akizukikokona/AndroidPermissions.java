@@ -56,6 +56,24 @@ public final class AndroidPermissions {
         return ALLOW.equals(mode) || ASK.equals(mode) || DENY.equals(mode);
     }
 
+    public static boolean isCapability(String capability) {
+        return indexOf(capability) >= 0;
+    }
+
+    /** User-facing Chinese label used by native confirmation dialogs. */
+    public static String label(String capability) {
+        if (SCREEN.equals(capability)) return "读取屏幕";
+        if (SCREENSHOT.equals(capability)) return "截图";
+        if (INPUT.equals(capability)) return "点击与输入";
+        if (SYSTEM.equals(capability)) return "打开应用与系统操作";
+        if (NOTIFICATIONS_READ.equals(capability)) return "读取通知";
+        if (NOTIFICATIONS_ACT.equals(capability)) return "通知操作";
+        if (MEDIA.equals(capability)) return "媒体与音量亮度";
+        if (CLIPBOARD.equals(capability)) return "剪贴板";
+        if (FEEDBACK.equals(capability)) return "语音与振动";
+        return capability;
+    }
+
     public static String mode(Context context, String capability) {
         int index = indexOf(capability);
         if (index < 0) return DENY;
