@@ -21,11 +21,21 @@ public final class TarExtractor {
         void onBytes(long bytes);
     }
 
+    /** Decides whether one regular-file entry belongs to the update. */
+    public interface Filter {
+        boolean shouldExtract(String name, long size);
+    }
+
     private TarExtractor() {
     }
 
     public static void extract(InputStream tar, File destination, Progress progress)
             throws IOException {
+        extract(tar, destination, progress, null);
+    }
+
+    public static void extract(InputStream tar, File destination, Progress progress,
+                               Filter filter) throws IOException {
         if (!destination.isDirectory() && !destination.mkdirs()) {
             throw new IOException("无法创建目标目录");
         }
@@ -80,6 +90,16 @@ public final class TarExtractor {
                 chmod(target, mode | 0700);
                 skip(tar, size);
             } else if (type == '0' || type == '\0' || type == '7') {
+                String entry = normalized(name);
+                boolean write = filter == null || filter.shouldExtract(entry, size);
+                if (!write) {
+                    // Incremental update: the installed copy already matches.
+                    // The stream still has to be consumed so the next header
+                    // lines up, and progress keeps advancing.
+                    skipEntry(tar, size);
+                    if (progress != null) progress.onBytes(size);
+                    continue;
+                }
                 File parent = target.getParentFile();
                 if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
                     throw new IOException("无法创建目录 " + parent);
@@ -155,6 +175,16 @@ public final class TarExtractor {
             }
             remaining -= skipped;
         }
+    }
+
+    /** Skips a regular-file entry's payload and its 512-byte block padding. */
+    private static void skipEntry(InputStream input, long size) throws IOException {
+        skip(input, size + (size % BLOCK == 0 ? 0 : BLOCK - size % BLOCK));
+    }
+
+    /** Manifest paths are stored without the "./" prefix tar uses. */
+    private static String normalized(String name) {
+        return name.startsWith("./") ? name.substring(2) : name;
     }
 
     private static File resolve(File root, String name) throws IOException {

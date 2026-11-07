@@ -153,6 +153,14 @@ cp -a "$NODE_MODULES/." "$RT/lib/node_modules/"
 rm -rf "$RT/lib/node_modules/.bin"
 find "$RT/lib/node_modules" -type l -delete
 
+# node-addon-require-builtin publishes no android-arm64 optional package, so its
+# native entry throws on Android and dsh-app-boot cannot prepare the host
+# ("No usable native binding"). The engine already runs node with
+# --expose-internals, so ship the JS entry that require()s internal modules
+# directly. See runtime-patches/node-addon-require-builtin-android.js.
+cp "$ROOT/runtime-patches/node-addon-require-builtin-android.js" \
+   "$RT/lib/node_modules/node-addon-require-builtin/lib/index.js"
+
 # ripgrep is selected by process.platform/arch at require time. Node on
 # Android reports platform "android", so only the android-arm64 package is
 # resolvable there; the glibc linux packages never load.
@@ -369,6 +377,34 @@ fi
 mkdir -p "$RT/lib/node_modules/dsh-thinking-slider"
 cp -a "$SLIDER_DIR/package/." "$RT/lib/node_modules/dsh-thinking-slider/"
 
+# dsh-better-sidebar: right-hand workbench (file tree, editor, changes, tasks,
+# side chat) that can also host native right-sidebar tabs. Bundled so the
+# feature is available offline on first boot.
+BSB_VERSION="${BSB_VERSION:-0.30.1}"
+BSB_DIR="$BUILD/better-sidebar"
+BSB_INSTALLED=$(node -p "require('$BSB_DIR/package/package.json').version" 2>/dev/null || true)
+mkdir -p "$BSB_DIR"
+if [ "$BSB_INSTALLED" != "$BSB_VERSION" ]; then
+  ( cd "$BSB_DIR" && rm -rf package && curl -sSL -o bsb.tgz \
+      "https://registry.npmmirror.com/dsh-better-sidebar/-/dsh-better-sidebar-$BSB_VERSION.tgz" \
+      && tar -xzf bsb.tgz )
+fi
+mkdir -p "$RT/lib/node_modules/dsh-better-sidebar"
+cp -a "$BSB_DIR/package/." "$RT/lib/node_modules/dsh-better-sidebar/"
+find "$RT/lib/node_modules/dsh-better-sidebar" -type l -delete
+# Type declarations, TypeScript sources and build scripts never run.
+rm -rf "$RT/lib/node_modules/dsh-better-sidebar/lib/types" \
+       "$RT/lib/node_modules/dsh-better-sidebar/src" \
+       "$RT/lib/node_modules/dsh-better-sidebar/scripts"
+
+# The host's Plugins page already owns the sidebar's plugin row, so the market
+# must not add a second icon beside it. Its own row is optional by design; pin
+# it off and keep the market reachable from the Plugins page tab and Settings.
+node "$ROOT/tools/patch-dshmarket-sidebar.mjs" "$RT"
+
+# Kokona wording for the new-conversation hero (English headline + Preview).
+node "$ROOT/tools/patch-kokona-branding.mjs" "$RT"
+
 # KNHPlus: Android-only MCP server (accessibility UI automation, notifications,
 # media/volume/brightness, TTS) plus the bundled skill that documents it.
 mkdir -p "$RT/lib/node_modules/knhplus-mcp" "$RT/skills"
@@ -394,16 +430,29 @@ cat > "$ROOT/app/assets/seed/cordis.patch.yml" <<'YAML'
   disabled: true
 YAML
 
+# Kokona glibc runtime: self-built glibc 2.44 (termux patchset, native ELF
+# TLS, no outline atomics) + kokona-grun launcher. Bionic stays the default
+# for everything; only glibc binaries opt in via kokona-grun
+# (see skills/glibc-runtime). Optional: build via build/glibc-run/build.sh.
+GLIBC_SRC="$BUILD/glibc-run/staging/data/user/0/com.knh.akizukikokona/files/KokonaRuntime/kokona-glibc"
+if [ -d "$GLIBC_SRC" ]; then
+  rm -rf "$RT/kokona-glibc"
+  mkdir -p "$RT/kokona-glibc"
+  cp -a "$GLIBC_SRC/." "$RT/kokona-glibc/"
+else
+  echo "WARNING: glibc staging missing ($GLIBC_SRC); runtime ships without kokona-glibc" >&2
+fi
+
 echo "packing $RT ..."
 TAR="$BUILD/runtime.tar"
 rm -f "$TAR"
+# Per-file inventory for incremental app updates: the installer rewrites only
+# entries whose sha256 changed instead of unpacking all 600 MB again.
+DATA=$(node "$ROOT/tools/runtime-manifest.mjs" "$RT" "$OUT_ASSETS/runtime.manifest")
+echo "$DATA" > "$OUT_ASSETS/runtime.bytes"
 tar --format=pax -cf "$TAR" -C "$RT" .
 SIZE=$(stat -c %s "$TAR")
 echo "$SIZE" > "$OUT_ASSETS/runtime.size"
-# Exact number of regular-file bytes the extractor writes; used as the
-# denominator for the real extraction percentage (tar headers would skew it).
-DATA=$(find "$RT" -type f -printf '%s\n' | awk '{s+=$1} END{print s+0}')
-echo "$DATA" > "$OUT_ASSETS/runtime.bytes"
 
 rm -f "$OUT_ASSETS/runtime.tar.xz"
 xz -6 -T0 -c "$TAR" > "$OUT_ASSETS/runtime.tar.xz"

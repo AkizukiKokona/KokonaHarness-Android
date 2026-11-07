@@ -13,3 +13,8 @@ local.properties
 
 # 运行时解包产物
 runtime/
+
+# 生成物
+app/assets/runtime.manifest
+*.log
+.DS_Store

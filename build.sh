@@ -45,7 +45,7 @@ echo "[4/6] dex"
 echo "[5/6] package"
 cp "$OUT/base.apk" "$OUT/app.apk"
 (cd "$OUT/dex" && zip -q -X "$OUT/app.apk" classes.dex)
-(cd "$ROOT/app" && zip -q -X "$OUT/app.apk" assets/runtime.size assets/runtime.bytes assets/seed/cordis.patch.yml assets/kokona-bg.jpg)
+(cd "$ROOT/app" && zip -q -X "$OUT/app.apk" assets/runtime.size assets/runtime.bytes assets/runtime.manifest assets/seed/cordis.patch.yml assets/seed/node-addon-require-builtin-android.js assets/brand.svg assets/kokona-bg.jpg)
 (cd "$ROOT/app" && zip -0 -q -X "$OUT/app.apk" assets/runtime.tar.xz)
 
 echo "[6/6] align + sign"

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const SERVER_NAME = "knhplus";
-const SERVER_VERSION = "1.2.0";
+const SERVER_VERSION = "1.2.2";
 const runDir = process.env.KOKONA_APP_RUN || "";
 const log = (...args) => console.error("[knhplus]", ...args);
 

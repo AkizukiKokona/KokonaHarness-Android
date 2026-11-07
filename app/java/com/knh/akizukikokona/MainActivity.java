@@ -18,6 +18,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.util.Base64;
 import android.util.TypedValue;
 import android.widget.ScrollView;
 import android.net.Uri;
@@ -47,7 +48,9 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -63,7 +66,13 @@ public class MainActivity extends Activity {
 
     private static final String SHIM =
             "(function(){" +
-            "if(window.__KOKONA_SHIM__)return;window.__KOKONA_SHIM__=true;" +
+            // The runtime index.html sets __KOKONA_SHIM__ for its own download/picker
+            // shim, so this native-side shim needs a separate guard or it never runs.
+            "if(window.__KOKONA_NATIVE_SHIM__){try{" +
+            "if(window.__KOKONA_APPLY_BRAND__)window.__KOKONA_APPLY_BRAND__();" +
+            "if(window.__KOKONA_SYNC_SB__)window.__KOKONA_SYNC_SB__();" +
+            "}catch(e){}return;}" +
+            "window.__KOKONA_NATIVE_SHIM__=true;" +
             "window.__KOKONA_PICK_CALLBACKS__={};" +
             "window.__KOKONA_PICK_RESOLVE__=function(id,path,err){" +
             "var c=window.__KOKONA_PICK_CALLBACKS__[id];if(!c)return;" +
@@ -75,6 +84,77 @@ public class MainActivity extends Activity {
             "window.__KOKONA_PICK_CALLBACKS__[id]={resolve:resolve,reject:reject};" +
             "try{KokonaBridge.pickDirectory(id);}catch(e){delete window.__KOKONA_PICK_CALLBACKS__[id];reject(e);}" +
             "});}};" +
+            // Sidebar state: only the fully hidden sidebar gets the Kokona signature
+            // opener; the expanded drawer keeps its normal collapse button.
+            "var vis=function(el){try{if(!el)return false;var r=el.getBoundingClientRect();" +
+            "return r.width>1&&r.height>1&&r.right>0&&r.left<window.innerWidth&&r.bottom>0;" +
+            "}catch(e){return false;}};" +
+            "var sbOpen=function(){var lead=document.querySelector('[data-shell-leading]');" +
+            "if(lead)return lead.hasAttribute('inert');" +
+            "var t=document.querySelector('[data-sidebar-toggle]');" +
+            "return !!(t&&t.closest('[aria-modal=\"true\"]'));};" +
+            "var firstVis=function(sel){var n=document.querySelectorAll(sel);" +
+            "for(var i=0;i<n.length;i++){if(vis(n[i]))return n[i];}return null;};" +
+            "var syncSb=function(){var root=document.documentElement;try{root.setAttribute('data-kn-sb'," +
+            "sbOpen()?'open':'closed');}catch(e){}" +
+            // While any dialog overlay owns the screen, restore the shell's own
+            // icons: the brand takeover replaces a real button's glyph with a
+            // background image, which leaves that control looking cut off and
+            // unresponsive inside the settings overlay.
+            "try{var m=null,n=document.querySelectorAll('[role=\"dialog\"]');" +
+            "for(var i=0;i<n.length;i++){if(vis(n[i])){m=n[i];break;}}" +
+            "root.setAttribute('data-kn-modal',m?'1':'0');}catch(e){}};" +
+            "var raf=window.requestAnimationFrame||function(f){return setTimeout(f,50);};" +
+            "var queued=false;var syncSoon=function(){if(queued)return;queued=true;" +
+            "raf(function(){queued=false;syncSb();});};" +
+            "window.__KOKONA_APPLY_BRAND__=function(){try{" +
+            "if(document.getElementById('kn-sidebar-brand'))return;" +
+            "var styleEl=document.createElement('style');styleEl.id='kn-sidebar-brand';" +
+            "styleEl.textContent='html[data-kn-sb=\"closed\"][data-kn-modal=\"0\"] [data-sidebar-opener]{width:auto!important;" +
+            "height:30px!important;padding:0 4px!important;}'+" +
+            "'html[data-kn-sb=\"closed\"][data-kn-modal=\"0\"] [data-sidebar-opener] svg{display:none!important;}'+" +
+            "'html[data-kn-sb=\"closed\"][data-kn-modal=\"0\"] [data-sidebar-opener]::after{content:\"\";display:block;" +
+            "width:88px;height:24px;background:var(--kn-brand,none) center/contain no-repeat;}'+" +
+            // Portrait: better-sidebar docks against the conversation column, which
+            // is the full viewport on a phone; keep its panes inside the screen and
+            // let the bottom workbench use the whole width under the IME.
+            "'@media (max-width:600px){[data-dsh-panel-host] [data-dsh-panel]{max-width:100vw!important;}'+" +
+            "'[data-dsh-panel-host] [data-dsh-bottom-panel]{left:0!important;right:0!important;}}'+" +
+            // The dock is a fixed, viewport-sized layer. Keep it *below* the
+            // settings/account overlays (z-index 1001) instead of raising
+            // dialogs: a raised dialog container reorders its own backdrop above
+            // the content, and on a phone the drawer itself is a role=dialog
+            // element that then dims the settings page and eats every tap.
+            "'[data-dsh-panel-host]{z-index:20!important;}';" +
+            "(document.head||document.documentElement).appendChild(styleEl);" +
+            "var b=window.__KOKONA_BRAND_URL__;" +
+            "if(b){document.documentElement.style.setProperty('--kn-brand','url(\"'+b+'\")');}" +
+            "}catch(e){}};window.__KOKONA_APPLY_BRAND__();" +
+            // Edge swipe: left-to-right opens the drawer from the left third, right-to-left
+            // closes it while open. Short, mostly horizontal swipes only.
+            "var sx=0,sy=0,st0=0,tr=false,stEl=null;" +
+            "var inDock=function(el){try{return !!(el&&el.closest&&" +
+            "el.closest('[data-dsh-panel-host],[data-dsh-better-sidebar]'));}catch(e){return false;}};" +
+            "document.addEventListener('touchstart',function(e){" +
+            "if(e.touches.length!==1){tr=false;return;}var t=e.touches[0];" +
+            "sx=t.clientX;sy=t.clientY;st0=Date.now();tr=true;stEl=e.target;},{passive:true,capture:true});" +
+            "document.addEventListener('touchend',function(e){if(!tr)return;tr=false;" +
+            "var t=e.changedTouches[0];if(!t)return;var dx=t.clientX-sx,dy=t.clientY-sy,dt=Date.now()-st0;" +
+            // The docked editor/terminal/chat owns horizontal gestures inside it;
+            // leave those to the plugin instead of toggling the left drawer.
+            "if(dt>700||Math.abs(dy)>70||inDock(stEl))return;" +
+            "if(dx>70&&sx<window.innerWidth*0.35&&!sbOpen()){" +
+            "var o=firstVis('[data-sidebar-opener]');if(o){try{o.click();}catch(x){}}}" +
+            "else if(dx<-70&&sbOpen()){var c=firstVis('[data-sidebar-toggle]');" +
+            "if(c){try{c.click();}catch(x){}}}},{passive:true,capture:true});" +
+            "var observeSb=function(){try{if(window.__KOKONA_SB_OBS__||!document.body)return;" +
+            "window.__KOKONA_SB_OBS__=new MutationObserver(syncSoon);" +
+            "window.__KOKONA_SB_OBS__.observe(document.body,{subtree:true,childList:true," +
+            "attributes:true,attributeFilter:['class','style','aria-modal','aria-expanded']});" +
+            "}catch(e){}};" +
+            "window.__KOKONA_SYNC_SB__=function(){observeSb();syncSb();};" +
+            "window.__KOKONA_SYNC_SB__();setTimeout(window.__KOKONA_SYNC_SB__,600);" +
+            "setInterval(syncSb,1200);" +
             // Keyboard: keep the composer above the IME and expose the inset as a CSS
             // variable for layouts that position themselves against the visual viewport.
             "var kb=function(){try{var v=window.visualViewport;" +
@@ -88,8 +168,32 @@ public class MainActivity extends Activity {
             "kb();" +
             "})();";
 
+    /** The shim plus the bundled signature used by the collapsed-sidebar opener. */
+    private String shimScript() {
+        if (brandDataUrl == null) {
+            brandDataUrl = loadBrandDataUrl();
+        }
+        return "window.__KOKONA_BRAND_URL__='" + brandDataUrl + "';" + SHIM;
+    }
+
+    private String loadBrandDataUrl() {
+        try {
+            InputStream input = getAssets().open("brand.svg");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) > 0) output.write(buffer, 0, read);
+            input.close();
+            return "data:image/svg+xml;base64,"
+                    + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
     private FrameLayout root;
     private WebView web;
+    private String brandDataUrl;
     private LinearLayout overlay;
     private ProgressBar progress;
     private TextView statusText;
@@ -108,7 +212,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.2.0";
+    private static final String APP_VERSION = "1.2.2";
 
     private EngineService.Listener engineListener;
 
@@ -233,6 +337,14 @@ public class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setUserAgentString(settings.getUserAgentString() + " KokonaHarness/" + APP_VERSION);
+        // targetSdk is below 29, so Android's WebView applies algorithmic
+        // darkening to the light UI in dark mode. That washes out labels and
+        // makes dialogs look greyed out, so opt out explicitly.
+        if (Build.VERSION.SDK_INT >= 33) {
+            settings.setAlgorithmicDarkeningAllowed(false);
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            settings.setForceDark(WebSettings.FORCE_DARK_OFF);
+        }
         if (Build.VERSION.SDK_INT >= 26) {
             web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         }
@@ -255,12 +367,12 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                view.evaluateJavascript(SHIM, null);
+                view.evaluateJavascript(shimScript(), null);
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                view.evaluateJavascript(SHIM, null);
+                view.evaluateJavascript(shimScript(), null);
                 webLoaded = true;
                 if (pendingPickResult != null) {
                     deliverPick(pendingPickResult);

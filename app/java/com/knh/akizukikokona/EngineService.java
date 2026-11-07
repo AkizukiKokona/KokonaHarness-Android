@@ -7,6 +7,9 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -21,6 +24,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
@@ -212,6 +216,7 @@ public class EngineService extends Service {
                     publish(State.INSTALLING, null, message, fraction);
                 }
             });
+            ensureRuntimePatch();
             seedProfile();
             if (stopping) return;
             publish(State.STARTING, null, "正在启动引擎…", -1f);
@@ -228,13 +233,45 @@ public class EngineService extends Service {
 
     private static final String PROFILE_NAME = "kokona";
 
+    /**
+     * The bundled node-addon-require-builtin has no Android binding; copy the JS
+     * fallback into the installed runtime on every start. This keeps the runtime
+     * version marker unchanged for bug-fix releases, so an upgrade does not
+     * re-extract the 600 MB snapshot just to change one file.
+     */
+    private void ensureRuntimePatch() {
+        File target = new File(RuntimeInstaller.runtimeDir(this),
+                "lib/node_modules/node-addon-require-builtin/lib/index.js");
+        try {
+            if (target.isFile() && readText(target).contains("android-js-fallback")) return;
+            InputStream input = getAssets().open("seed/node-addon-require-builtin-android.js");
+            File parent = target.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                input.close();
+                return;
+            }
+            FileOutputStream output = new FileOutputStream(target);
+            try {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) > 0) output.write(buffer, 0, read);
+            } finally {
+                input.close();
+                output.close();
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "require-builtin fallback patch failed", error);
+        }
+    }
+
     private static final String PROFILE_PACKAGE_JSON =
             "{\n  \"name\": \"dsh-profile-kokona\",\n  \"private\": true,\n"
             + "  \"dependencies\": { \"dshmarket\": \"1.73.10\","
-            + " \"dsh-thinking-slider\": \"0.3.4\" },\n"
+            + " \"dsh-thinking-slider\": \"0.3.4\","
+            + " \"dsh-better-sidebar\": \"0.30.1\" },\n"
             + "  \"dsh\": { \"profile\": { \"bundles\": [\"@deepseek-ai/dsh-base\","
             + " \"@deepseek-ai/dsh-web-app\", \"dshmarket\","
-            + " \"dsh-thinking-slider\"] } }\n}\n";
+            + " \"dsh-thinking-slider\", \"dsh-better-sidebar\"] } }\n}\n";
 
     private static final String PROFILE_PNPM_WORKSPACE =
             "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n";
@@ -250,6 +287,7 @@ public class EngineService extends Service {
         else ensureBuiltinBundles(manifest);
         ensurePackageLink(profile, "dshmarket");
         ensurePackageLink(profile, "dsh-thinking-slider");
+        ensurePackageLink(profile, "dsh-better-sidebar");
         ensureMcpLink(profile);
         File workspaceFile = new File(profile, "pnpm-workspace.yaml");
         if (!workspaceFile.exists()) writeText(workspaceFile, PROFILE_PNPM_WORKSPACE);
@@ -377,7 +415,8 @@ public class EngineService extends Service {
             boolean changed = false;
             String[][] builtins = {
                     {"dshmarket", "1.73.10"},
-                    {"dsh-thinking-slider", "0.3.4"}
+                    {"dsh-thinking-slider", "0.3.4"},
+                    {"dsh-better-sidebar", "0.30.1"}
             };
             for (String[] bundle : builtins) {
                 String name = bundle[0];
@@ -460,6 +499,40 @@ public class EngineService extends Service {
         return "引擎启动失败： " + message;
     }
 
+    /**
+     * Android 10+ stopped publishing net.dns*, so the glibc launcher cannot read
+     * resolvers from properties. Hand it the live list instead; kokona-grun
+     * turns this file into resolv.conf before every run.
+     */
+    private void writeDnsServers(File runtime) {
+        try {
+            ConnectivityManager connectivity =
+                    (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivity == null) return;
+            Network active = connectivity.getActiveNetwork();
+            if (active == null) return;
+            LinkProperties properties = connectivity.getLinkProperties(active);
+            if (properties == null) return;
+            StringBuilder out = new StringBuilder();
+            for (InetAddress address : properties.getDnsServers()) {
+                String host = address.getHostAddress();
+                // Link-local IPv6 resolvers need an interface scope that glibc's
+                // resolver does not carry; skip them in favour of the rest.
+                if (host == null || host.startsWith("fe80")) continue;
+                out.append("nameserver ").append(host).append('\n');
+            }
+            if (out.length() == 0) return;
+            File etc = new File(runtime, "kokona-glibc/etc");
+            if (!etc.isDirectory() && !etc.mkdirs()) return;
+            try (FileOutputStream stream = new FileOutputStream(new File(etc, "dns.servers"))) {
+                stream.write(out.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            Log.i(TAG, "dns servers for glibc: " + out.toString().trim());
+        } catch (Throwable error) {
+            Log.w(TAG, "glibc dns list unavailable: " + error);
+        }
+    }
+
     private void launchProcess() throws IOException {
         File runtime = RuntimeInstaller.runtimeDir(this);
         File home = new File(getFilesDir(), "home");
@@ -478,6 +551,8 @@ public class EngineService extends Service {
         File bin = new File(runtime, "lib/node_modules/@deepseek-ai/dsh/lib/bin.js");
         if (!node.isFile()) throw new IOException("运行时缺少 node");
         if (!bin.isFile()) throw new IOException("运行时缺少 dsh");
+
+        writeDnsServers(runtime);
 
         ProcessBuilder builder = new ProcessBuilder(
                 node.getAbsolutePath(),
