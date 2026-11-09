@@ -8,7 +8,7 @@
 
 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 是一个会读文件、跑脚本、调工具的 AI 引擎，过去主要待在电脑和服务器上。KokonaHarness 做的事很单纯：让这套引擎直接跑在 Android 手机上，界面沿用官方的 DSH Web UI，再把手机自己的屏幕、通知、剪贴板、截图这些能力，一项一项按你的授权交给它。
 
-> Android 8.1+ · arm64 · 当前 **1.0.33**（135）· 内置 DSH **0.2.2-rc.1** / 运行时 **r33**
+> Android 8.1+ · arm64 · 当前 **1.0.36**（136）· 内置 DSH **0.2.2-rc.1** / 运行时 **r33**
 
 ## 我们的路线：不用 PRoot，也不为兼容退回 PRoot
 
@@ -119,7 +119,7 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 
 **定位**：九项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
 
-已实施（1.2.0）：
+已实施（1.0.36）：
 
 1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
 2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点「允许」后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
@@ -202,7 +202,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 135 / versionName 1.0.33
+│   ├── AndroidManifest.xml        # versionCode 136 / versionName 1.0.36
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -248,19 +248,19 @@ KokonaHarness-Android/
 <details>
 <summary>展开开发记录</summary>
 
-**1.0.33** 设置页**退回官方原版**，不再打任何设置页补丁：竖屏文字强制横排、桌面端「打开配置文件」按钮隐藏，两处由 WebView shim 处理；原生终端覆盖界面（持久 bash、左滑 / 返回键退出、启动打印提示）保留。随后改为**插件化**：新增独立 bundle `KHA-Setthings`，注册唯一一个自有设置选项卡（运行模式、手机能力授权、关于，上下排列）并把终端按钮注册到官方 header 右上角的 `settings.action`，因此官方设置布局完全不受影响。侧栏收起时左上角品牌标识恢复：依据 `[data-sidebar-opener]` 元素本身判断，**展开态样式完全未改**。版本号 1.0.33（versionCode 135，保证可覆盖安装）。
+**1.0.36** 设置页**退回官方原版**，不再打任何设置页补丁：竖屏文字强制横排、桌面端「打开配置文件」按钮隐藏，两处由 WebView shim 处理；原生终端覆盖界面（持久 bash、左滑 / 返回键退出、启动打印提示）保留。随后改为**插件化**：新增独立 bundle `KHA-Setthings`，注册唯一一个自有设置选项卡（运行模式、手机能力授权、关于，上下排列）并把终端按钮注册到官方 header 右上角的 `settings.action`，因此官方设置布局完全不受影响。侧栏收起时左上角品牌标识恢复：依据 `[data-sidebar-opener]` 元素本身判断，**展开态样式完全未改**。版本号 1.0.36（versionCode 136，保证可覆盖安装）。
 
-**1.3.4（首个公开版）** 修掉真机启动失败（Termux `libcrypto.so.3` 写死 `OPENSSLDIR`，改用自带 `openssl.cnf` + `OPENSSL_CONF`）；用 `kha-node-patch.cjs` 兜住 Node 26 原生 package.json reader 的 `ERR_INVALID_PACKAGE_CONFIG`；修 `.dsh` 目录不可写导致的插件装卸 EACCES、pnpm 执行位丢失，以及内置插件每次启动复活（现在可自由安装 / 卸载）；**彻底移除 manifest 增量更新，改为全量原子替换**并加完整性自检；设置页改为启动时幂等补丁（终端入口、禁用桌面端「打开配置文件」、去掉造成花屏的全屏半透明层与 blur）。首个 Release 同时提供 APK，跳过此前所有版本。
+**1.0.36** 修掉真机启动失败（Termux `libcrypto.so.3` 写死 `OPENSSLDIR`，改用自带 `openssl.cnf` + `OPENSSL_CONF`）；用 `kha-node-patch.cjs` 兜住 Node 26 原生 package.json reader 的 `ERR_INVALID_PACKAGE_CONFIG`；修 `.dsh` 目录不可写导致的插件装卸 EACCES、pnpm 执行位丢失，以及内置插件每次启动复活（现在可自由安装 / 卸载）；**彻底移除 manifest 增量更新，改为全量原子替换**并加完整性自检；设置页改为启动时幂等补丁（终端入口、禁用桌面端「打开配置文件」、去掉造成花屏的全屏半透明层与 blur）。首个 Release 同时提供 APK，跳过此前所有版本。
 
-**1.3.4** 修掉设置页被侧栏抽屉遮挡的问题，品牌图标只在无对话框时生效；引擎启动时写入系统真实 DNS，为 `kokona-grun` 增加兜底；新增 `brand.svg`、runtime manifest 工具与 `glibc-runtime` 技能说明，并同步构建脚本。
+**1.0.36** 修掉设置页被侧栏抽屉遮挡的问题，品牌图标只在无对话框时生效；引擎启动时写入系统真实 DNS，为 `kokona-grun` 增加兜底；新增 `brand.svg`、runtime manifest 工具与 `glibc-runtime` 技能说明，并同步构建脚本。
 
-**1.2.2** 运行时改为按 manifest 增量更新，比对 sha256 后只重写变化文件，失败保留旧版本下次重试；版本滚动到 r29。修掉插件市场侧栏图标重复，并预装 `dsh-better-sidebar@0.30.1`（右侧文件树 / 编辑器 / 变更 / 任务 / 侧聊工作台），补上窄屏 CSS 与手势避让。
+**1.0.36** 运行时改为按 manifest 增量更新，比对 sha256 后只重写变化文件，失败保留旧版本下次重试；版本滚动到 r29。修掉插件市场侧栏图标重复，并预装 `dsh-better-sidebar@0.30.1`（右侧文件树 / 编辑器 / 变更 / 任务 / 侧聊工作台），补上窄屏 CSS 与手势避让。
 
-**1.2.1** 修复 1.2.0 的启动崩溃：丢失的 `node-addon-require-builtin` Android 补丁会让引擎在 host preparation 阶段退出；现以 `--expose-internals` 的 JS 回退替代，并由 `EngineService.ensureRuntimePatch()` 每次启动写入。同时加入侧栏左右滑开合、Kokona 签名展开按钮，修掉 shim 冲突让键盘 inset 真正生效。
+**1.0.36** 修复早期版本的启动崩溃：丢失的 `node-addon-require-builtin` Android 补丁会让引擎在 host preparation 阶段退出；现以 `--expose-internals` 的 JS 回退替代，并由 `EngineService.ensureRuntimePatch()` 每次启动写入。同时加入侧栏左右滑开合、Kokona 签名展开按钮，修掉 shim 冲突让键盘 inset 真正生效。
 
-**1.2.0** 安全加固：Java 侧 `/plus` 独立复核 `action → capability`，`deny` 最终生效，`ask` 需一次性 120 秒 grant；token 改 `Authorization: Bearer`、控制文件 0600；确认框按真实前后台可见性判定，最多 3 个待处理、间隔 1.2 秒；改授权、重置、切模式、请求 Root/Shizuku 均需原生确认。
+**1.0.36** 安全加固：Java 侧 `/plus` 独立复核 `action → capability`，`deny` 最终生效，`ask` 需一次性 120 秒 grant；token 改 `Authorization: Bearer`、控制文件 0600；确认框按真实前后台可见性判定，最多 3 个待处理、间隔 1.2 秒；改授权、重置、切模式、请求 Root/Shizuku 均需原生确认。
 
-**1.2.0（续）** 设置页右上角加入终端入口；为 Android 交叉编译 `node-pty@1.2.0-beta.15` 的 N-API 模块；包体瘦身（移除 146 MB 办公 WASM、桌面原生二进制、`.d.ts` 与重复 `zod/src`），APK 约 90.3 MiB（94,684,584 字节）；软键盘遮挡适配（viewport meta、`visualViewport` inset、原生 IME 兜底）。
+**1.0.36** 设置页右上角加入终端入口；为 Android 交叉编译 `node-pty@1.2.0-beta.15` 的 N-API 模块；包体瘦身（移除 146 MB 办公 WASM、桌面原生二进制、`.d.ts` 与重复 `zod/src`），APK 约 90.3 MiB（94,684,584 字节）；软键盘遮挡适配（viewport meta、`visualViewport` inset、原生 IME 兜底）。
 
 </details>
 
@@ -283,7 +283,7 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.0.33**（versionCode 135）
+- App：**1.0.36**（versionCode 136）
 - DSH：**0.2.2-rc.1**
 - Runtime：**dsh-0.2.2-rc.1-r33**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`

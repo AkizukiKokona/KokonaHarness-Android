@@ -152,7 +152,7 @@ window.__ModuleLoader__.load({
 
     function AboutBlock() {
       const b = bridge()
-      let version = '1.0.33'
+      let version = '1.0.36'
       try { if (b !== null && typeof b.version === 'function') version = b.version() } catch (error) { /* keep fallback */ }
       return h('div', { className: 'khaSet_block' },
         h('div', { className: 'khaSet_title' }, '关于 KHA'),

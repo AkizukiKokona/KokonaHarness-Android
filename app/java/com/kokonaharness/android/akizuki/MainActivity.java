@@ -299,7 +299,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.2.2";
+    private static final String APP_VERSION = "1.0.36";
 
     private EngineService.Listener engineListener;
 
