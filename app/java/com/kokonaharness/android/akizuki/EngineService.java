@@ -220,8 +220,8 @@ public class EngineService extends Service {
             });
             step = "runtime-patch";
             ensureRuntimePatch();
-            step = "settings-ui-patch";
-            ensureSettingsUiPatch();
+            step = "official-settings";
+            restoreOfficialSettings();
             step = "seed-profile";
             seedProfile();
             if (stopping) return;
@@ -501,58 +501,39 @@ public class EngineService extends Service {
     }
 
     /**
-     * Idempotent fixes to the bundled dsh settings UI, applied to the
-     * installed runtime on every boot (same pattern as ensureRuntimePatch).
-     * This avoids re-extracting the 600 MB snapshot just to correct a few
-     * lines, and it takes effect immediately on an existing installation.
+     * The bundled runtime snapshot still contains our old settings
+     * customisation (extra sections, a terminal action and CSS overrides).
+     * Those were the source of the broken settings page, so drop the pristine
+     * upstream client.js onto the installed runtime on every boot. This keeps
+     * the 100 MB snapshot untouched while still taking effect immediately on
+     * existing installations, and stays idempotent by comparing bytes.
      */
-    private void ensureSettingsUiPatch() {
+    private void restoreOfficialSettings() {
         File target = new File(RuntimeInstaller.runtimeDir(this),
                 "lib/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js");
         if (!target.isFile()) return;
         try {
-            String text = readText(target);
-            String patched = text;
-            // Android has no Host able to open a local settings document; the
-            // desktop-only action only ever produced a red "打开配置文件失败".
-            patched = replaceOnce(patched,
-                    "if (documentInjected !== void 0) ctx.slots.inject(\"settings.action\", () => ctx.slots.register({",
-                    "if (false && documentInjected !== void 0) ctx.slots.inject(\"settings.action\", () => ctx.slots.register({");
-            // Keep the terminal action clickable even before a session exists.
-            patched = replaceOnce(patched,
-                    "const enabled = available === true && session !== void 0;",
-                    "const enabled = available === true;");
-            patched = replaceOnce(patched,
-                    "if (target.mounted.getSnapshot() === void 0) return;",
-                    "/* kokona: terminal opens without an active session */");
-            // The custom settings CSS painted the panel through a full-screen
-            // translucent ::before layer and blurred the mask. Android WebView
-            // rasterises both into stale/torn textures. Restore an opaque
-            // panel, drop the layer and the blur, and use a real viewport unit.
-            // Layout (the collapsed side nav) is deliberately left untouched.
-            patched = replaceOnce(patched,
-                    ".VOzbGW_panel{background:transparent}",
-                    ".VOzbGW_panel{background:var(--dsw-alias-bg-layer-2,#fff)}");
-            patched = patched.replaceAll("\\.VOzbGW_panel::before\\{[^}]*\\}", "");
-            patched = replaceOnce(patched,
-                    "backdrop-filter:var(--dsw-mask-blur)",
-                    "backdrop-filter:none");
-            patched = replaceOnce(patched,
-                    ".VOzbGW_panel{width:100vw;max-width:none;height:100vh;border-radius:0}",
-                    ".VOzbGW_panel{width:100vw;max-width:none;height:100dvh;border-radius:0}");
-            if (!patched.equals(text)) {
-                writeText(target, patched);
-                Log.i(TAG, "settings UI patch applied");
-            }
+            byte[] official = readAsset("official-settings-client.js");
+            byte[] installed = java.nio.file.Files.readAllBytes(target.toPath());
+            if (java.util.Arrays.equals(official, installed)) return;
+            java.nio.file.Files.write(target.toPath(), official);
+            Log.i(TAG, "official settings UI restored (" + official.length + " bytes)");
         } catch (Exception error) {
-            Log.w(TAG, "settings UI patch failed", error);
+            Log.w(TAG, "cannot restore official settings UI", error);
         }
     }
 
-    private static String replaceOnce(String text, String from, String to) {
-        int at = text.indexOf(from);
-        if (at < 0) return text;
-        return text.substring(0, at) + to + text.substring(at + from.length());
+    private byte[] readAsset(String name) throws IOException {
+        InputStream input = getAssets().open(name);
+        try {
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) > 0) output.write(buffer, 0, read);
+            return output.toByteArray();
+        } finally {
+            input.close();
+        }
     }
 
     /**

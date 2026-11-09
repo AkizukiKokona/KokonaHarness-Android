@@ -18,6 +18,7 @@ import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Drawable;
 import android.util.Base64;
 import android.util.TypedValue;
@@ -118,7 +119,8 @@ public class MainActivity extends Activity {
             "var hasModal=false,m=null,n=document.querySelectorAll('[role=\"dialog\"]');" +
             "for(var i=0;i<n.length;i++){if(vis(n[i])){m=n[i];break;}}" +
             "hasModal=!!m;if(hasModal!==modalState){modalState=hasModal;" +
-            "setAttr(root,'data-kn-modal',hasModal?'1':'0');}};" +
+            "setAttr(root,'data-kn-modal',hasModal?'1':'0');" +
+            "try{KokonaBridge.setTerminalVisible(hasModal);}catch(e){}}};" +
             // dsh-better-sidebar sizes its panel host with `height:100dvh` and then
             // verifies the host covers the viewport: it compares the measured box
             // against `window.innerHeight` and, on a mismatch wider than 8px, flips
@@ -154,10 +156,16 @@ public class MainActivity extends Activity {
             "window.__KOKONA_APPLY_BRAND__=function(){try{" +
             "if(document.getElementById('kn-sidebar-brand'))return;" +
             "var styleEl=document.createElement('style');styleEl.id='kn-sidebar-brand';" +
-            "styleEl.textContent='html[data-kn-sb=\"closed\"][data-kn-modal=\"0\"] [data-sidebar-opener]{width:auto!important;" +
+            // The opener element only exists in the collapsed/drawer layout; the
+            // expanded sidebar renders [data-sidebar-toggle] instead. Keying the
+            // brand off that element (rather than the JS-computed data-kn-sb
+            // flag) keeps it visible when the flag is wrong and leaves the
+            // expanded layout completely untouched. :not() also matches before
+            // the observer has written the attribute for the first time.
+            "styleEl.textContent='html:not([data-kn-modal=\"1\"]) [data-sidebar-opener]{width:auto!important;" +
             "height:30px!important;padding:0 4px!important;}'+" +
-            "'html[data-kn-sb=\"closed\"][data-kn-modal=\"0\"] [data-sidebar-opener] svg{display:none!important;}'+" +
-            "'html[data-kn-sb=\"closed\"][data-kn-modal=\"0\"] [data-sidebar-opener]::after{content:\"\";display:block;" +
+            "'html:not([data-kn-modal=\"1\"]) [data-sidebar-opener] svg{display:none!important;}'+" +
+            "'html:not([data-kn-modal=\"1\"]) [data-sidebar-opener]::after{content:\"\";display:block;" +
             "width:88px;height:24px;background:var(--kn-brand,none) center/contain no-repeat;}'+" +
             // Portrait: better-sidebar docks against the conversation column, which
             // is the full viewport on a phone; keep its panes inside the screen and
@@ -182,7 +190,13 @@ public class MainActivity extends Activity {
             "'[role=\"dialog\"] *,[aria-modal=\"true\"] *{backdrop-filter:none!important;" +
             "-webkit-backdrop-filter:none!important;}'+" +
             "'[role=\"dialog\"],[aria-modal=\"true\"]{backdrop-filter:none!important;" +
-            "-webkit-backdrop-filter:none!important;}';" +
+            "-webkit-backdrop-filter:none!important;}'+" +
+            // Portrait: never let a cramped column wrap CJK labels one glyph per
+            // line. writing-mode is horizontal by default, so forcing it is safe;
+            // nowrap plus a minimum nav-cell width keeps the labels readable.
+            "'[role=\"dialog\"] *,[aria-modal=\"true\"] *{writing-mode:horizontal-tb!important;}'+" +
+            "'[role=\"dialog\"] [class*=\"Label\"],[aria-modal=\"true\"] [class*=\"Label\"]{white-space:nowrap!important;}'+" +
+            "'[role=\"dialog\"] [class*=\"navCell\"],[aria-modal=\"true\"] [class*=\"navCell\"]{min-width:96px!important;}';" +
             "(document.head||document.documentElement).appendChild(styleEl);" +
             "var b=window.__KOKONA_BRAND_URL__;" +
             "if(b){document.documentElement.style.setProperty('--kn-brand','url(\"'+b+'\")');}" +
@@ -270,6 +284,8 @@ public class MainActivity extends Activity {
     private Button renderButton;
     private WebView authWeb;
     private View authClose;
+    private TerminalOverlay terminalOverlay;
+    private Button terminalButton;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private ValueCallback<Uri[]> fileCallback;
@@ -463,6 +479,33 @@ public class MainActivity extends Activity {
 
         root.addView(overlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // Small terminal launcher, shown only while a settings/dialog overlay owns
+        // the screen (see Bridge.setTerminalVisible), so it never covers the
+        // conversation UI. The sheet itself is a native view on top of the WebView.
+        terminalButton = new Button(this);
+        terminalButton.setText(">_");
+        terminalButton.setAllCaps(false);
+        terminalButton.setTextSize(12f);
+        terminalButton.setTextColor(0xffffffff);
+        GradientDrawable pill = new GradientDrawable();
+        pill.setColor(0xcc232833);
+        pill.setCornerRadius(dp(20));
+        terminalButton.setBackground(pill);
+        terminalButton.setPadding(0, 0, 0, 0);
+        FrameLayout.LayoutParams termLp = new FrameLayout.LayoutParams(
+                dp(40), dp(40), Gravity.BOTTOM | Gravity.END);
+        termLp.rightMargin = dp(14);
+        termLp.bottomMargin = dp(18);
+        root.addView(terminalButton, termLp);
+        terminalButton.setVisibility(View.GONE);
+        terminalOverlay = new TerminalOverlay(this, root);
+        terminalButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                terminalOverlay.show();
+            }
+        });
 
         setContentView(root);
     }
@@ -1009,6 +1052,10 @@ public class MainActivity extends Activity {
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (terminalOverlay != null && terminalOverlay.isShown()) {
+                terminalOverlay.hide();
+                return true;
+            }
             if (authWeb != null) {
                 closeAuthWindow();
                 return true;
@@ -1062,6 +1109,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (terminalOverlay != null) terminalOverlay.hide();
         try {
             Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener);
         } catch (Throwable ignored) {
@@ -1080,8 +1128,20 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    /** JS bridge: only directory picking is exposed, nothing else. */
+    /** JS bridge: directory picking plus the terminal-launcher visibility hook. */
     private class Bridge {
+        @JavascriptInterface
+        public void setTerminalVisible(final boolean visible) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (terminalButton != null) {
+                        terminalButton.setVisibility(visible ? View.VISIBLE : View.GONE);
+                    }
+                }
+            });
+        }
+
         @JavascriptInterface
         public void pickDirectory(final String requestId) {
             runOnUiThread(new Runnable() {

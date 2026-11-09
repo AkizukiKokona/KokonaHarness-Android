@@ -8,7 +8,7 @@
 
 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 是一个会读文件、跑脚本、调工具的 AI 引擎，过去主要待在电脑和服务器上。KokonaHarness 做的事很单纯：让这套引擎直接跑在 Android 手机上，界面沿用官方的 DSH Web UI，再把手机自己的屏幕、通知、剪贴板、截图这些能力，一项一项按你的授权交给它。
 
-> Android 8.1+ · arm64 · 当前 **1.3.4**（134）· 内置 DSH **0.2.2-rc.1** / 运行时 **r33**
+> Android 8.1+ · arm64 · 当前 **1.0.33**（135）· 内置 DSH **0.2.2-rc.1** / 运行时 **r33**
 
 ## 我们的路线：不用 PRoot，也不为兼容退回 PRoot
 
@@ -92,7 +92,7 @@
 
 - **不套容器**：Node 直接跑在 Android 的 bionic 上，启动快、体积小，也没有 ptrace 的额外开销；代价是依赖 glibc 的预编译包需要单独适配（现在可按需用 `kokona-grun`，见「已知限制」）。
 - **薄原生桥**：Java 侧只做 Android 特有的事（无障碍、通知读取、Shizuku/Root、截图、剪贴板、震动、TTS），其余全部交给 DSH 插件与 MCP。
-- **能力逐项授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），九项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；设置页负责展示与修改。
+- **能力逐项授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），九项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；设置页现已退回官方 UI，授权项由原生桥维护。
 - **确认闸门**：`ask` 能力触发 `ConfirmationGate` 原生弹窗，45 秒无响应按拒绝处理；App 不可见时不弹窗，并提示先打开 App。
 - **运行时全量安装**：`RuntimeInstaller` 把新快照解到 staging，确认完整后把旧目录 rename 为 `.old`、staging 转正，再删旧树；`runtimeLooksComplete()` 抽查关键文件，避免「版本号相同但目录是空的」被误判为已安装。小修复（JS 补丁、执行位）由 `EngineService` 每次启动幂等写入，不重打整包。
 
@@ -201,7 +201,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 134 / versionName 1.3.4
+│   ├── AndroidManifest.xml        # versionCode 135 / versionName 1.0.33
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -221,6 +221,7 @@ KokonaHarness-Android/
 │   └── assets/
 │       ├── runtime.tar.xz         # 构建产物（不入库）
 │       ├── kha-node-patch.cjs     # Node 26 package.json reader 兜底
+│       ├── official-settings-client.js # 官方设置页原版（启动时覆盖）
 │       └── seed/                  # DSH profile 种子
 ├── knhplus-mcp/                   # KNHPlus MCP server（server.mjs）
 ├── runtime-skills/                # 随运行时下发的技能说明
@@ -233,17 +234,19 @@ KokonaHarness-Android/
 ├── build-runtime.sh               # 组装 arm64 运行时快照
 ├── build-nodepty.sh               # 交叉编译 node-pty（NDK + Termux 头文件）
 ├── build.sh                       # aapt2 + javac + d8 + zipalign + apksigner
-├── runtime-patches/               # 运行时定制补丁存档（设置页、require-builtin 回退）
+├── runtime-patches/               # 历史定制补丁存档（设置页已停用、require-builtin 回退）
 ├── WINDOWS-BUILD.md               # Windows 构建踩坑与速查表
 └── README.md
 ```
 
-DSH UI 的定制补丁主要打在 `node_modules/@deepseek-ai/...` 的构建树上，构建时由 `build-runtime.sh` 一起打包；设置页补丁同时存档在 `runtime-patches/`，其余清单见本文末「运行时定制」。
+设置页现已退回官方原版：`EngineService.restoreOfficialSettings()` 每次启动把 `assets/official-settings-client.js` 覆盖到已安装的运行时，不必重打 100 MB 快照；`runtime-patches/` 里的设置页补丁仅作历史存档、不再生效。其余 DSH UI 定制仍打在 `node_modules/@deepseek-ai/...` 的构建树上，清单见本文末「运行时定制」。
 
 ## 最近更新
 
 <details>
-<summary>展开开发记录（1.2.0 – 1.3.4）</summary>
+<summary>展开开发记录</summary>
+
+**1.0.33** 设置页**退回官方原版**（移除自定义分区、终端 action 与全部设置页 CSS 覆盖），只保留两点由 App 注入的改动：竖屏时强制文字横排、不出现一字一行的竖排；以及一个原生小终端按钮（设置弹层打开时才显示），点开是原生覆盖界面，内含连到内置运行时的持久 bash，左滑或返回键退出、启动时打印使用提示。侧栏收起时左上角的品牌标识恢复：改为依据 `[data-sidebar-opener]` 元素本身判断，不再依赖易失效的 JS 状态标记，**展开态样式完全未改**。版本号改为 1.0.33（versionCode 135，保证可覆盖安装）。
 
 **1.3.4（首个公开版）** 修掉真机启动失败（Termux `libcrypto.so.3` 写死 `OPENSSLDIR`，改用自带 `openssl.cnf` + `OPENSSL_CONF`）；用 `kha-node-patch.cjs` 兜住 Node 26 原生 package.json reader 的 `ERR_INVALID_PACKAGE_CONFIG`；修 `.dsh` 目录不可写导致的插件装卸 EACCES、pnpm 执行位丢失，以及内置插件每次启动复活（现在可自由安装 / 卸载）；**彻底移除 manifest 增量更新，改为全量原子替换**并加完整性自检；设置页改为启动时幂等补丁（终端入口、禁用桌面端「打开配置文件」、去掉造成花屏的全屏半透明层与 blur）。首个 Release 同时提供 APK，跳过此前所有版本。
 
@@ -263,7 +266,7 @@ DSH UI 的定制补丁主要打在 `node_modules/@deepseek-ai/...` 的构建树�
 
 构建树中已应用的品牌 / 移动端定制（升级 DSH 时需重新移植）：
 
-- `dsh-client-ui-settings-general`：移动端导航宽度、`title` 属性、环境高级设置页、手机权限页（九项 allow/ask/deny）、右上角终端入口。
+- `dsh-client-ui-settings-general`：**已退回官方原版**，不再打任何设置页补丁；竖屏文字横排与终端入口改由 App 原生层 / WebView shim 提供。
 - `dsh-client-ui-sidebar`：收起为小 K，展开为完整 Kokona 签名 + HARNESS；App 侧另将完全收起的展开按钮换成签名图，并加入左右滑手势。
 - `dsh-client-ui-conversation`：居中布局、移除 Hero 小 K 标记。
 - `dsh-client-ui-brand-official`：品牌签名与 HARNESS pill。
@@ -278,9 +281,9 @@ DSH UI 的定制补丁主要打在 `node_modules/@deepseek-ai/...` 的构建树�
 
 ## 版本
 
-- App：**1.3.4**（versionCode 134）
+- App：**1.0.33**（versionCode 135）
 - DSH：**0.2.2-rc.1**
 - Runtime：**dsh-0.2.2-rc.1-r33**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
-- APK：102,815,372 B（约 98.1 MiB），其中 `runtime.tar.xz` 102,159,884 B
-- 仓库：public · 首个 Release 以当前版本为准，跳过此前所有版本
+- 运行时快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
+- 仓库：public · Release 以当前版本为准，跳过此前所有版本
