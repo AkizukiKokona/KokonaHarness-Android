@@ -33,6 +33,7 @@
 - 本项目是**社区第三方作品，与 DeepSeek 官方无关**；DSH 本身由 DeepSeek 开源。
 - 仓库已**公开**，[Release](../../releases/latest) 提供可直接安装的 APK，也可按下面的「构建」章节自行打包。设备要求 Android 8.1（API 27）及以上、**仅 arm64-v8a**。
 - 让 AI 操作手机需要你主动开启无障碍等权限；不授权的话，它就是一个跑在手机里的 DSH，不涉及屏幕操控。
+- 仓库同时在 [GitHub](https://github.com/AkizukiKokona/KokonaHarness-Android) 与 [Codeberg](https://codeberg.org/AkizukiKokona/KokonaHarness-Android) 托管，每次推送两边同步更新；APK 发行版以 GitHub Releases 为准。
 
 ## 开始使用
 
