@@ -1,0 +1,17 @@
+{
+  "name": "KHA-Setthings",
+  "version": "1.0.0",
+  "description": "KHA 专属设置界面：运行模式、手机能力授权、终端入口与版本信息。单一选项卡，上下排列，不改动官方设置布局。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  }
+}

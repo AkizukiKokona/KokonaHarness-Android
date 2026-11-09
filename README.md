@@ -92,7 +92,7 @@
 
 - **不套容器**：Node 直接跑在 Android 的 bionic 上，启动快、体积小，也没有 ptrace 的额外开销；代价是依赖 glibc 的预编译包需要单独适配（现在可按需用 `kokona-grun`，见「已知限制」）。
 - **薄原生桥**：Java 侧只做 Android 特有的事（无障碍、通知读取、Shizuku/Root、截图、剪贴板、震动、TTS），其余全部交给 DSH 插件与 MCP。
-- **能力逐项授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），九项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；设置页现已退回官方 UI，授权项由原生桥维护。
+- **能力逐项授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），九项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；授权项在 `KHA-Setthings` 插件提供的专属设置页中展示与修改。
 - **确认闸门**：`ask` 能力触发 `ConfirmationGate` 原生弹窗，45 秒无响应按拒绝处理；App 不可见时不弹窗，并提示先打开 App。
 - **运行时全量安装**：`RuntimeInstaller` 把新快照解到 staging，确认完整后把旧目录 rename 为 `.old`、staging 转正，再删旧树；`runtimeLooksComplete()` 抽查关键文件，避免「版本号相同但目录是空的」被误判为已安装。小修复（JS 补丁、执行位）由 `EngineService` 每次启动幂等写入，不重打整包。
 
@@ -222,6 +222,7 @@ KokonaHarness-Android/
 │       ├── runtime.tar.xz         # 构建产物（不入库）
 │       ├── kha-node-patch.cjs     # Node 26 package.json reader 兜底
 │       ├── official-settings-client.js # 官方设置页原版（启动时覆盖）
+│       ├── KHA-Setthings/         # 专属设置插件（启动时解压进 runtime）
 │       └── seed/                  # DSH profile 种子
 ├── knhplus-mcp/                   # KNHPlus MCP server（server.mjs）
 ├── runtime-skills/                # 随运行时下发的技能说明
@@ -239,14 +240,14 @@ KokonaHarness-Android/
 └── README.md
 ```
 
-设置页现已退回官方原版：`EngineService.restoreOfficialSettings()` 每次启动把 `assets/official-settings-client.js` 覆盖到已安装的运行时，不必重打 100 MB 快照；`runtime-patches/` 里的设置页补丁仅作历史存档、不再生效。其余 DSH UI 定制仍打在 `node_modules/@deepseek-ai/...` 的构建树上，清单见本文末「运行时定制」。
+设置页现已退回官方原版：`EngineService.restoreOfficialSettings()` 每次启动把 `assets/official-settings-client.js` 覆盖到已安装的运行时，不必重打 100 MB 快照；`runtime-patches/` 里的设置页补丁仅作历史存档、不再生效。我们的自有功能改由独立插件 **`KHA-Setthings`** 提供：启动时把 `assets/KHA-Setthings/` 的三个小文件解压到运行时 `lib/node_modules/KHA-Setthings/`，并一次性注册进 profile 的 `dsh.profile.bundles`。插件只注册一个 `settings.section`（运行模式 / 手机能力授权 / 关于，上下排列）和右上角的终端 `settings.action`，**完全不改官方设置布局**；桌面端专属的「打开配置文件」按钮由 WebView shim 一条 CSS 隐藏。其余 DSH UI 定制仍打在 `node_modules/@deepseek-ai/...` 的构建树上，清单见本文末「运行时定制」。
 
 ## 最近更新
 
 <details>
 <summary>展开开发记录</summary>
 
-**1.0.33** 设置页**退回官方原版**（移除自定义分区、终端 action 与全部设置页 CSS 覆盖），只保留两点由 App 注入的改动：竖屏时强制文字横排、不出现一字一行的竖排；以及一个原生小终端按钮（设置弹层打开时才显示），点开是原生覆盖界面，内含连到内置运行时的持久 bash，左滑或返回键退出、启动时打印使用提示。侧栏收起时左上角的品牌标识恢复：改为依据 `[data-sidebar-opener]` 元素本身判断，不再依赖易失效的 JS 状态标记，**展开态样式完全未改**。版本号改为 1.0.33（versionCode 135，保证可覆盖安装）。
+**1.0.33** 设置页**退回官方原版**，不再打任何设置页补丁：竖屏文字强制横排、桌面端「打开配置文件」按钮隐藏，两处由 WebView shim 处理；原生终端覆盖界面（持久 bash、左滑 / 返回键退出、启动打印提示）保留。随后改为**插件化**：新增独立 bundle `KHA-Setthings`，注册唯一一个自有设置选项卡（运行模式、手机能力授权、关于，上下排列）并把终端按钮注册到官方 header 右上角的 `settings.action`，因此官方设置布局完全不受影响。侧栏收起时左上角品牌标识恢复：依据 `[data-sidebar-opener]` 元素本身判断，**展开态样式完全未改**。版本号 1.0.33（versionCode 135，保证可覆盖安装）。
 
 **1.3.4（首个公开版）** 修掉真机启动失败（Termux `libcrypto.so.3` 写死 `OPENSSLDIR`，改用自带 `openssl.cnf` + `OPENSSL_CONF`）；用 `kha-node-patch.cjs` 兜住 Node 26 原生 package.json reader 的 `ERR_INVALID_PACKAGE_CONFIG`；修 `.dsh` 目录不可写导致的插件装卸 EACCES、pnpm 执行位丢失，以及内置插件每次启动复活（现在可自由安装 / 卸载）；**彻底移除 manifest 增量更新，改为全量原子替换**并加完整性自检；设置页改为启动时幂等补丁（终端入口、禁用桌面端「打开配置文件」、去掉造成花屏的全屏半透明层与 blur）。首个 Release 同时提供 APK，跳过此前所有版本。
 
@@ -266,7 +267,7 @@ KokonaHarness-Android/
 
 构建树中已应用的品牌 / 移动端定制（升级 DSH 时需重新移植）：
 
-- `dsh-client-ui-settings-general`：**已退回官方原版**，不再打任何设置页补丁；竖屏文字横排与终端入口改由 App 原生层 / WebView shim 提供。
+- `dsh-client-ui-settings-general`：**已退回官方原版**，不再打任何设置页补丁；竖屏文字横排与「打开配置文件」隐藏由 WebView shim 提供，运行模式 / 权限 / 终端入口改由 `KHA-Setthings` 插件提供。
 - `dsh-client-ui-sidebar`：收起为小 K，展开为完整 Kokona 签名 + HARNESS；App 侧另将完全收起的展开按钮换成签名图，并加入左右滑手势。
 - `dsh-client-ui-conversation`：居中布局、移除 Hero 小 K 标记。
 - `dsh-client-ui-brand-official`：品牌签名与 HARNESS pill。

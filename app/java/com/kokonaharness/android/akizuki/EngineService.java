@@ -66,6 +66,10 @@ public class EngineService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final String ACTION_STOP = "com.kokonaharness.android.akizuki.STOP";
     private static final String SIDEBAR_BUNDLE = "dsh-better-sidebar";
+    private static final String SETTHINGS_BUNDLE = "KHA-Setthings";
+    private static final String[] SETTHINGS_ASSETS = {
+            "package.json", "lib/index.js", "lib/client.js"
+    };
     private static final Pattern URL_PATTERN =
             Pattern.compile("http://127\\.0\\.0\\.1:\\d+/?\\?token=[A-Za-z0-9_-]+");
 
@@ -222,6 +226,8 @@ public class EngineService extends Service {
             ensureRuntimePatch();
             step = "official-settings";
             restoreOfficialSettings();
+            step = "setthings-bundle";
+            installSetthingsBundle();
             step = "seed-profile";
             seedProfile();
             if (stopping) return;
@@ -299,10 +305,11 @@ public class EngineService extends Service {
             "{\n  \"name\": \"dsh-profile-kokona\",\n  \"private\": true,\n"
             + "  \"dependencies\": { \"dshmarket\": \"1.73.10\","
             + " \"dsh-thinking-slider\": \"0.3.4\","
-            + " \"dsh-better-sidebar\": \"0.30.1\" },\n"
+            + " \"dsh-better-sidebar\": \"0.30.1\","
+            + " \"KHA-Setthings\": \"1.0.0\" },\n"
             + "  \"dsh\": { \"profile\": { \"bundles\": [\"@deepseek-ai/dsh-base\","
             + " \"@deepseek-ai/dsh-web-app\", \"dshmarket\","
-            + " \"dsh-thinking-slider\", \"dsh-better-sidebar\"] } }\n}\n";
+            + " \"dsh-thinking-slider\", \"dsh-better-sidebar\", \"KHA-Setthings\"] } }\n}\n";
 
     private static final String PROFILE_PNPM_WORKSPACE =
             "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n";
@@ -425,6 +432,7 @@ public class EngineService extends Service {
         // during the safe-mode experiment. Runs once, then never again, so the
         // user's own install/uninstall decisions still stick.
         restoreSidebarOnce(profile, manifest);
+        ensureSetthingsOnce(profile, manifest);
 
         File workspaceFile = new File(profile, "pnpm-workspace.yaml");
         if (!workspaceFile.exists()) writeText(workspaceFile, PROFILE_PNPM_WORKSPACE);
@@ -534,6 +542,78 @@ public class EngineService extends Service {
         } finally {
             input.close();
         }
+    }
+
+    /**
+     * Deploy our own settings bundle into the installed runtime. A dsh bundle
+     * is just a directory under lib/node_modules, so copying three small files
+     * out of assets is enough: no npm install and no re-packing of the 100 MB
+     * snapshot. A byte comparison keeps this idempotent.
+     */
+    private void installSetthingsBundle() {
+        File dir = new File(RuntimeInstaller.runtimeDir(this),
+                "lib/node_modules/" + SETTHINGS_BUNDLE);
+        try {
+            if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) return;
+            for (String name : SETTHINGS_ASSETS) {
+                File target = new File(dir, name);
+                File parent = target.getParentFile();
+                if (parent != null && !parent.isDirectory() && !parent.mkdirs()) continue;
+                byte[] source = readAsset(SETTHINGS_BUNDLE + "/" + name);
+                if (target.isFile() && java.util.Arrays.equals(source,
+                        java.nio.file.Files.readAllBytes(target.toPath()))) continue;
+                java.nio.file.Files.write(target.toPath(), source);
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "KHA-Setthings bundle install failed", error);
+        }
+    }
+
+    /**
+     * Register our first-party settings bundle exactly once. Using a one-shot
+     * marker means a later user uninstall is never resurrected, which is the
+     * same rule the rest of the profile follows.
+     */
+    private void ensureSetthingsOnce(File profile, File manifest) {
+        android.content.SharedPreferences prefs =
+                getSharedPreferences("kha", MODE_PRIVATE);
+        if (prefs.getBoolean("setthings_v1", false)) return;
+        prefs.edit().putBoolean("setthings_v1", true).apply();
+        if (!manifest.isFile()) return;
+        try {
+            String raw = new String(java.nio.file.Files.readAllBytes(manifest.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            org.json.JSONObject root = new org.json.JSONObject(raw);
+            org.json.JSONObject deps = root.optJSONObject("dependencies");
+            if (deps == null) {
+                deps = new org.json.JSONObject();
+                root.put("dependencies", deps);
+            }
+            if (!deps.has(SETTHINGS_BUNDLE)) deps.put(SETTHINGS_BUNDLE, "1.0.0");
+            org.json.JSONObject dsh = root.optJSONObject("dsh");
+            if (dsh == null) {
+                dsh = new org.json.JSONObject();
+                root.put("dsh", dsh);
+            }
+            org.json.JSONObject dshProfile = dsh.optJSONObject("profile");
+            if (dshProfile == null) {
+                dshProfile = new org.json.JSONObject();
+                dsh.put("profile", dshProfile);
+            }
+            org.json.JSONArray bundles = dshProfile.optJSONArray("bundles");
+            if (bundles == null) bundles = new org.json.JSONArray();
+            boolean present = false;
+            for (int i = 0; i < bundles.length(); i++) {
+                if (SETTHINGS_BUNDLE.equals(bundles.optString(i))) present = true;
+            }
+            if (!present) bundles.put(SETTHINGS_BUNDLE);
+            dshProfile.put("bundles", bundles);
+            writeText(manifest, root.toString(2) + "\n");
+            Log.i(TAG, "registered " + SETTHINGS_BUNDLE + " bundle");
+        } catch (Exception error) {
+            Log.w(TAG, "cannot register KHA-Setthings bundle", error);
+        }
+        ensurePackageLink(profile, SETTHINGS_BUNDLE);
     }
 
     /**

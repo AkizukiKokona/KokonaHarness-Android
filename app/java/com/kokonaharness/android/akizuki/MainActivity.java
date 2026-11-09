@@ -18,7 +18,6 @@ import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Drawable;
 import android.util.Base64;
 import android.util.TypedValue;
@@ -119,8 +118,7 @@ public class MainActivity extends Activity {
             "var hasModal=false,m=null,n=document.querySelectorAll('[role=\"dialog\"]');" +
             "for(var i=0;i<n.length;i++){if(vis(n[i])){m=n[i];break;}}" +
             "hasModal=!!m;if(hasModal!==modalState){modalState=hasModal;" +
-            "setAttr(root,'data-kn-modal',hasModal?'1':'0');" +
-            "try{KokonaBridge.setTerminalVisible(hasModal);}catch(e){}}};" +
+            "setAttr(root,'data-kn-modal',hasModal?'1':'0');}};" +
             // dsh-better-sidebar sizes its panel host with `height:100dvh` and then
             // verifies the host covers the viewport: it compares the measured box
             // against `window.innerHeight` and, on a mismatch wider than 8px, flips
@@ -196,7 +194,11 @@ public class MainActivity extends Activity {
             // nowrap plus a minimum nav-cell width keeps the labels readable.
             "'[role=\"dialog\"] *,[aria-modal=\"true\"] *{writing-mode:horizontal-tb!important;}'+" +
             "'[role=\"dialog\"] [class*=\"Label\"],[aria-modal=\"true\"] [class*=\"Label\"]{white-space:nowrap!important;}'+" +
-            "'[role=\"dialog\"] [class*=\"navCell\"],[aria-modal=\"true\"] [class*=\"navCell\"]{min-width:96px!important;}';" +
+            "'[role=\"dialog\"] [class*=\"navCell\"],[aria-modal=\"true\"] [class*=\"navCell\"]{min-width:96px!important;}'+" +
+            // The upstream "open settings document" action is a desktop Host
+            // feature; on Android it only ever produces a red error message.
+            // Its CSS-module class is stable, so hide the whole action container.
+            "'.me01iq_action{display:none!important;}';" +
             "(document.head||document.documentElement).appendChild(styleEl);" +
             "var b=window.__KOKONA_BRAND_URL__;" +
             "if(b){document.documentElement.style.setProperty('--kn-brand','url(\"'+b+'\")');}" +
@@ -285,7 +287,6 @@ public class MainActivity extends Activity {
     private WebView authWeb;
     private View authClose;
     private TerminalOverlay terminalOverlay;
-    private Button terminalButton;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private ValueCallback<Uri[]> fileCallback;
@@ -480,32 +481,11 @@ public class MainActivity extends Activity {
         root.addView(overlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // Small terminal launcher, shown only while a settings/dialog overlay owns
-        // the screen (see Bridge.setTerminalVisible), so it never covers the
-        // conversation UI. The sheet itself is a native view on top of the WebView.
-        terminalButton = new Button(this);
-        terminalButton.setText(">_");
-        terminalButton.setAllCaps(false);
-        terminalButton.setTextSize(12f);
-        terminalButton.setTextColor(0xffffffff);
-        GradientDrawable pill = new GradientDrawable();
-        pill.setColor(0xcc232833);
-        pill.setCornerRadius(dp(20));
-        terminalButton.setBackground(pill);
-        terminalButton.setPadding(0, 0, 0, 0);
-        FrameLayout.LayoutParams termLp = new FrameLayout.LayoutParams(
-                dp(40), dp(40), Gravity.BOTTOM | Gravity.END);
-        termLp.rightMargin = dp(14);
-        termLp.bottomMargin = dp(18);
-        root.addView(terminalButton, termLp);
-        terminalButton.setVisibility(View.GONE);
+        // The terminal sheet is a native overlay on top of the WebView. Its
+        // launcher lives in the settings header: the KHA-Setthings bundle
+        // registers it through the official settings.action slot, so no native
+        // floating button is needed and the header layout stays upstream.
         terminalOverlay = new TerminalOverlay(this, root);
-        terminalButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                terminalOverlay.show();
-            }
-        });
 
         setContentView(root);
     }
@@ -1128,16 +1108,14 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    /** JS bridge: directory picking plus the terminal-launcher visibility hook. */
+    /** JS bridge: directory picking plus the native terminal sheet opener. */
     private class Bridge {
         @JavascriptInterface
-        public void setTerminalVisible(final boolean visible) {
+        public void openTerminal() {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    if (terminalButton != null) {
-                        terminalButton.setVisibility(visible ? View.VISIBLE : View.GONE);
-                    }
+                    if (terminalOverlay != null) terminalOverlay.show();
                 }
             });
         }
