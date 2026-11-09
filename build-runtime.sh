@@ -5,6 +5,17 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD="${BUILD_DIR:-/workspace/build}"
+
+# Windows 原生 node.exe 不识别 MSYS 的 /d/... 路径（会解析成 D:\d\...）；
+# 脚本里 require('$RT/...') 把路径嵌在字符串内，MSYS 也无法自动转换参数。
+# 统一转成混合风格 D:/...：bash 与 Windows 程序都能解析。
+# Linux 原环境无 cygpath 时原样返回，保持跨平台。
+to_win() { cygpath -m "$1" 2>/dev/null || printf '%s' "$1"; }
+# GNU tar 会把 "D:/..." 里的 "D:" 当成远程主机名，文件参数需转回 /d/... 风格。
+to_msys() { cygpath -u "$1" 2>/dev/null || printf '%s' "$1"; }
+ROOT="$(to_win "$ROOT")"
+BUILD="$(to_win "$BUILD")"
+
 EXT="$BUILD/termux-debs/ext"
 RT="$BUILD/runtime"
 NODE_MODULES="$BUILD/rt/node_modules"
@@ -50,6 +61,23 @@ copy "$(L ncurses libncursesw.so.6.5)" "$RT/lib/libncursesw.so.6"
 
 mkdir -p "$RT/etc/tls"
 copy "$EXT/ca-certificates/data/data/com.termux/files/usr/etc/tls/cert.pem" "$RT/etc/tls/cert.pem"
+
+# The Termux build of libcrypto.so.3 has its OPENSSLDIR compiled in as
+# /data/data/com.termux/files/usr/etc/tls. OpenSSL reads openssl.cnf from there
+# at library init and treats a failure as fatal, so under any other install path
+# every node start died with "OpenSSL configuration error ... Permission denied"
+# before a single line of JavaScript ran. Ship our own minimal config and point
+# OPENSSL_CONF at it (see EngineService) so the compiled-in path is never used.
+cat > "$RT/etc/tls/openssl.cnf" <<'OPENSSL_CNF'
+# Minimal OpenSSL configuration for the bundled runtime.
+# INTENTIONALLY has no providers/engines/oid_section directives: anything that
+# makes OpenSSL go looking for modules outside this tree fails the same way the
+# compiled-in OPENSSLDIR did.
+openssl_conf = kha_init
+
+[kha_init]
+# Empty on purpose — we only need a readable file so initialisation succeeds.
+OPENSSL_CNF
 
 # Small CLI tools (bionic arm64 builds from the Termux packages).
 T() { echo "$EXT/$1/data/data/com.termux/files/usr/$2"; }
@@ -218,7 +246,7 @@ if [ "$PNPM_INSTALLED" != "$PNPM_VERSION" ]; then
   mkdir -p "$PNPM_DIR"
   curl -sSL -o "$PNPM_TARBALL" \
     "https://registry.npmmirror.com/@pnpm/exe.android-arm64/-/exe.android-arm64-$PNPM_VERSION.tgz"
-  tar -xzf "$PNPM_TARBALL" -C "$PNPM_DIR"
+  tar -xzf "$(to_msys "$PNPM_TARBALL")" -C "$(to_msys "$PNPM_DIR")"
 fi
 mkdir -p "$RT/lib/node_modules/@pnpm/exe.android-arm64"
 cp -a "$PNPM_DIR/package/." "$RT/lib/node_modules/@pnpm/exe.android-arm64/"
@@ -275,7 +303,9 @@ SH
 # no Tk. Everything else (ssl, sqlite3, ctypes/ffi, curses, readline, zlib,
 # bz2, lzma, expat, hash pools) is built in.
 PY_SRC="${PY_SRC:-$BUILD/py-build/pyinstall}"
-[ -x "$PY_SRC/bin/python3.15" ] || die "missing python build in $PY_SRC"
+# D 盘 drvfs 不保留 Unix 执行位，CPython prefix 从 WSL 复制过来后是 0644；
+# 只校验文件存在即可，下面 chmod 0755 会补回执行位。
+[ -f "$PY_SRC/bin/python3.15" ] || die "missing python build in $PY_SRC"
 [ -f "$PY_SRC/lib/libpython3.15.so" ] || die "missing libpython3.15.so"
 
 mkdir -p "$RT/python/bin" "$RT/python/lib"
@@ -434,7 +464,13 @@ YAML
 # TLS, no outline atomics) + kokona-grun launcher. Bionic stays the default
 # for everything; only glibc binaries opt in via kokona-grun
 # (see skills/glibc-runtime). Optional: build via build/glibc-run/build.sh.
-GLIBC_SRC="$BUILD/glibc-run/staging/data/user/0/com.knh.akizukikokona/files/KokonaRuntime/kokona-glibc"
+GLIBC_STAGING="$BUILD/glibc-run/staging/data/user/0"
+GLIBC_SRC="$GLIBC_STAGING/com.kokonaharness.android.akizuki/files/KokonaRuntime/kokona-glibc"
+if [ ! -d "$GLIBC_SRC" ]; then
+  # 构建机上的 staging 目录名沿用素材打包时的包名，与 APK 的 applicationId 无关；
+  # 兼容原环境按旧包名打包的素材，避免误判为缺失而跳过 kokona-glibc。
+  GLIBC_SRC="$GLIBC_STAGING/com.knh.akizukikokona/files/KokonaRuntime/kokona-glibc"
+fi
 if [ -d "$GLIBC_SRC" ]; then
   rm -rf "$RT/kokona-glibc"
   mkdir -p "$RT/kokona-glibc"
@@ -446,16 +482,16 @@ fi
 echo "packing $RT ..."
 TAR="$BUILD/runtime.tar"
 rm -f "$TAR"
-# Per-file inventory for incremental app updates: the installer rewrites only
-# entries whose sha256 changed instead of unpacking all 600 MB again.
-DATA=$(node "$ROOT/tools/runtime-manifest.mjs" "$RT" "$OUT_ASSETS/runtime.manifest")
+# Total payload bytes, used only to drive the install progress bar.
+DATA=$(node "$ROOT/tools/runtime-manifest.mjs" "$RT")
 echo "$DATA" > "$OUT_ASSETS/runtime.bytes"
-tar --format=pax -cf "$TAR" -C "$RT" .
+tar --format=pax -cf "$(to_msys "$TAR")" -C "$(to_msys "$RT")" .
 SIZE=$(stat -c %s "$TAR")
 echo "$SIZE" > "$OUT_ASSETS/runtime.size"
 
 rm -f "$OUT_ASSETS/runtime.tar.xz"
-xz -6 -T0 -c "$TAR" > "$OUT_ASSETS/runtime.tar.xz"
+# 默认 2 线程，避免 xz -T0 占满所有核心；游戏结束后可用 KHA_XZ_THREADS=0 全速。
+xz -6 -T"${KHA_XZ_THREADS:-2}" -c "$TAR" > "$OUT_ASSETS/runtime.tar.xz"
 rm -f "$TAR"
 
 echo "runtime.tar.xz: $(du -h "$OUT_ASSETS/runtime.tar.xz" | cut -f1) (raw $(numfmt --to=iec "$SIZE"))"

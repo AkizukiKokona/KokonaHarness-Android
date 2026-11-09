@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KNH</string>
+    <string name="app_name">KHA</string>
     <string name="engine_running">KokonaHarness 正在运行</string>
     <string name="engine_starting">KokonaHarness 正在启动引擎</string>
     <string name="engine_installing">正在解压运行时（首次启动较慢）</string>

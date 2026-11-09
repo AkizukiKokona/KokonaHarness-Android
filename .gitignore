@@ -18,3 +18,10 @@ runtime/
 app/assets/runtime.manifest
 *.log
 .DS_Store
+
+# AI 助手本地状态与临时计划（不入库）
+.workbuddy/
+PLAN.md
+
+# Shizuku AAR 解压出来的 .class 中间产物（编译用 classes.jar 即可）
+app/libs/shizuku/extracted/

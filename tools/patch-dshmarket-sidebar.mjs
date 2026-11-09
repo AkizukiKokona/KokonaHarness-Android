@@ -29,10 +29,16 @@ const text = readFileSync(file, 'utf8');
 let out = text;
 for (const [before, after] of replacements) {
   const hits = out.split(before).length - 1;
-  if (hits !== 1) {
-    console.error(`dshmarket sidebar patch: expected 1 match for "${before}", found ${hits}`);
-    process.exit(1);
+  if (hits === 1) {
+    out = out.replace(before, after);
+    continue;
   }
-  out = out.replace(before, after);
+  // 素材若已带此补丁则跳过，保证重复构建幂等。
+  if (hits === 0 && out.includes(after)) {
+    console.error(`dshmarket sidebar patch: already applied, skip "${before}"`);
+    continue;
+  }
+  console.error(`dshmarket sidebar patch: expected 1 match for "${before}", found ${hits}`);
+  process.exit(1);
 }
 writeFileSync(file, out);

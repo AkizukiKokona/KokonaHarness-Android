@@ -1,10 +1,68 @@
+<p align="center">
+  <img src="branding/brand.svg" alt="KokonaHarness" width="380">
+</p>
+
 # KokonaHarness
 
-把 DeepSeek Harness（DSH）装进 Android 手机的原生运行器。App 不依赖 PRoot、Ubuntu 容器或 Termux 安装，直接以 Android bionic 的 Node.js 运行完整 DSH 引擎，WebView 加载 DSH Web UI，并通过原生桥接把手机能力暴露给模型。
+**把 DeepSeek Harness 装进 Android 手机。不用电脑、不用 Root、不用 Termux，也不用先塞一整套 Linux 进去——打开 App，就能让 AI 真的动手干活。**
 
-当前版本：**1.2.2**（versionCode 122），内置运行时 **dsh-0.2.2-rc.1-r29**（manifest 增量更新）。
+[DSH（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 是一个会读文件、跑脚本、调工具的 AI 引擎，过去主要待在电脑和服务器上。KokonaHarness 做的事很单纯：让这套引擎直接跑在 Android 手机上，界面沿用官方的 DSH Web UI，再把手机自己的屏幕、通知、剪贴板、截图这些能力，一项一项按你的授权交给它。
+
+> Android 8.1+ · arm64 · 当前 **1.3.4**（134）· 内置 DSH **0.2.2-rc.1** / 运行时 **r33**
+
+## 我们的路线：不用 PRoot，也不为兼容退回 PRoot
+
+把 Linux 工具搬上 Android，常见做法是先造一个完整的 Linux 用户空间，再让所有程序住进去。KokonaHarness 选了另一条路，关键在两个点：
+
+- **Node.js 直接跑在 Android 原生的 bionic 上。** 没有 PRoot、没有 Ubuntu 根文件系统、没有 ptrace 拦截——引擎启动就是启动一个普通进程。运行时因此做得更轻，升级按整包全量替换，状态干净、不残留半更新文件。
+- **遇到 glibc 程序，交给 `kokona-grun` 按需接住，而不是回头开一个容器。** 默认所有命令仍走 bionic、性能不变；只有以 glibc 链接的 Linux arm64 程序才切换到构建时可带入的独立 glibc 运行器，同样零 PRoot、零 ptrace，启动接近原生。用法与边界见 [`runtime-skills/glibc-runtime/SKILL.md`](runtime-skills/glibc-runtime/SKILL.md)。
+
+换句话说：**从引擎到兼容层，整套运行时都不依赖 PRoot**。这是本项目与「内置完整 Linux 环境」那类路线最根本的区别。
+
+## 你会拿它做什么
+
+- **出门在外也能把活交出去。** 通勤、排队、临时没带电脑，一样可以丢一句「把这个月的账单按类别汇总，做成表格和趋势图」，让它读文件、写脚本、把结果交回你手里。
+- **让 AI 帮你点手机。** 读屏幕、看通知、点按输入、截图、调媒体和亮度——九项能力各自设成「允许 / 每次询问 / 关闭」，需要确认时由系统弹窗问你，模型没法自己改授权。
+- **还是你熟悉的那套 DSH。** 会话、模型切换、插件市场、终端标签、文件树工作台都在，界面是官方 Web UI 加了一点移动端适配，不是另起炉灶的简化版。
+- **Linux 命令行工具也能带进来。** 碰到以 glibc 链接的 arm64 程序，不必为了一个工具先装一整套 Linux；`kokona-grun` 直接接住，模型会按 `glibc-runtime` 技能先判断 ELF 解释器再决定怎么跑。
+- **装一次，升级不折腾。** 运行时随 App 一起打包；升级时先解到临时目录再原子替换旧树，不会留下半套运行时。小修复走启动时自愈，不必重打整包。
+
+## 先把几件事说清楚
+
+- 手机上跑的是 **DSH 引擎和工具环境**；真正动脑的模型请求仍发给你自己配置的服务方，需要联网、按你的账户计费。这里没有离线大模型，和其它 DSH 客户端一样。
+- 本项目是**社区第三方作品，与 DeepSeek 官方无关**；DSH 本身由 DeepSeek 开源。
+- 仓库已**公开**，[Release](../../releases/latest) 提供可直接安装的 APK，也可按下面的「构建」章节自行打包。设备要求 Android 8.1（API 27）及以上、**仅 arm64-v8a**。
+- 让 AI 操作手机需要你主动开启无障碍等权限；不授权的话，它就是一个跑在手机里的 DSH，不涉及屏幕操控。
+
+## 开始使用
+
+1. 直接装 [Release 里的 APK](../../releases/latest)，或准备构建环境（Node/npm 依赖、Android SDK/NDK、Termux arm64 运行时素材）后依次执行 `build-nodepty.sh` → `build-runtime.sh` → `build.sh`。
+2. 安装后按系统提示允许「安装未知来源」（项目以侧载为目标，`targetSdk 28`）。
+3. 首次启动会解包内置运行时（约 583 MiB），稍等片刻；小修复与执行位补会在每次启动时自愈，无需重装。
+4. 在 DSH 设置里配好模型凭据（服务方 / API Key），就可以开始派活了。建议先从不涉及删除、支付的任务试起。
+
+## 和 DSH Go：同一个目标，两条路线
+
+社区里还有一个很受关注的项目 [DSH Go](https://github.com/ccch1mneyyy/dsh-go)（由 ccch1mneyyy 开发），目标同样是「让 DeepSeek Harness 装进口袋」。两者都是围绕开源 DSH 的非官方客户端，工程取舍不同，谈不上谁替代谁：
+
+| | KokonaHarness（本项目） | DSH Go |
+|---|---|---|
+| 想解决的事 | 让 DSH 引擎在手机本机独立跑起来 | 手机本机可跑，也能接着用电脑上的 DSH 工作区 |
+| 引擎落在哪 | Android **bionic 上直接跑 Node.js**，**不用 PRoot**、不装 Ubuntu 根文件系统、无 ptrace | **PRoot 中的 Ubuntu 24.04** 环境，Node.js 与 DSH 在其中 |
+| 遇到 glibc 程序 | 默认仍走 bionic；按需用 **`kokona-grun`** 加载独立 glibc，**同样不用 PRoot**（构建时可带入） | 本机环境本身即完整 Ubuntu 用户空间，glibc 程序在其中直接运行 |
+| 界面 | 复用**官方 DSH Web UI**（WebView）+ 移动端定制 | 自研 **Flutter 原生界面**，可切网页版 |
+| 连回电脑 | 暂未提供 | **SSH / DSH Remote** |
+| 手机操控的授权 | **九项能力**各自 allow / ask / deny，ask 走原生确认闸门 | 三档确认（每次询问 / 本任务 / 始终），敏感操作默认交还用户 |
+| 运行环境形态 | 运行时快照压缩约 97 MiB、解压约 583 MiB，整包全量替换 | 首次本机环境建议预留约 1 GB，arm64 APK 约 185 MiB |
+| 获取方式 | 源码发布，自行构建 | Release 提供 arm64 APK 与完整使用文档 |
+
+> 表中体积与占用取自各自公开记录中的构建数据，会随版本变化。
+
+简单说：DSH Go 用一套完整 Linux 环境换来与桌面更一致的体验，并打通了远程主机；我们选择贴着 Android 原生跑——引擎不用 PRoot，遇到 glibc 程序再用 `kokona-grun` 按需接住，把运行时做轻，同时尽量把界面交还给官方 Web UI。两条路线把复杂度放在了不同的地方，没有高下之分。**如果你的工作区在电脑上、想随时切回去，DSH Go 的远程路线更顺手；如果你更在意「引擎就长在手机里」、不引入容器，以及逐项可控的手机能力授权，欢迎试试我们。** 两个项目都在快速迭代，具体功能以各自最新版本为准——也向社区先行者致意。
 
 ## 整体架构
+
+一句话概括：WebView 负责「看得见的界面」，Android 原生层负责「手机才有的能力」，最底下是随 App 一起打包的 Node.js 运行时。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -21,60 +79,97 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ loopback HTTP / stdio / MCP
 ┌───────────────▼─────────────────────────────────────────┐
-│  内置运行时（app 私有目录）                               │
+│  内置运行时（App 私有目录）                              │
 │  node (Termux bionic arm64) + bash + git/ripgrep/…        │
 │  node_modules: @deepseek-ai/dsh 及全部官方依赖            │
 │  runtime-skills: android-capabilities / python-runtime    │
+│                 / glibc-runtime                           │
 │  knhplus-mcp: KNHPlus MCP server（手机能力工具集）         │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ### 关键设计
 
-- **无容器**：Node 直接跑在 bionic 上，启动快、体积小、无 ptrace 开销；代价是 glibc 预编译包不可用（见“已知限制”）。
-- **薄原生桥**：Java 侧只做 Android 特有的事（无障碍、通知读取、Shizuku/Root、截图、剪贴板、震动、TTS），其余全部由 DSH 插件与 MCP 完成。
-- **能力粒度授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），九项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；设置页负责展示与修改。
-- **确认闸门**：`ask` 能力触发 `ConfirmationGate` 原生弹窗，45 秒无响应按拒绝处理，App 不可见时不弹窗并提示先打开 App。
-- **运行时增量更新**：`RuntimeInstaller` 按 `runtime.manifest`（sha256）比对，只重写变化文件；中途失败保留旧版本并在下次启动重试。
+- **不套容器**：Node 直接跑在 Android 的 bionic 上，启动快、体积小，也没有 ptrace 的额外开销；代价是依赖 glibc 的预编译包需要单独适配（现在可按需用 `kokona-grun`，见「已知限制」）。
+- **薄原生桥**：Java 侧只做 Android 特有的事（无障碍、通知读取、Shizuku/Root、截图、剪贴板、震动、TTS），其余全部交给 DSH 插件与 MCP。
+- **能力逐项授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），九项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；设置页负责展示与修改。
+- **确认闸门**：`ask` 能力触发 `ConfirmationGate` 原生弹窗，45 秒无响应按拒绝处理；App 不可见时不弹窗，并提示先打开 App。
+- **运行时全量安装**：`RuntimeInstaller` 把新快照解到 staging，确认完整后把旧目录 rename 为 `.old`、staging 转正，再删旧树；`runtimeLooksComplete()` 抽查关键文件，避免「版本号相同但目录是空的」被误判为已安装。小修复（JS 补丁、执行位）由 `EngineService` 每次启动幂等写入，不重打整包。
 
-## 目录结构
+## 手机能力：九项授权
 
-```
-KokonaHarness/
-├── app/
-│   ├── AndroidManifest.xml        # versionCode 122 / versionName 1.2.2
-│   ├── java/com/knh/akizukikokona/
-│   │   ├── MainActivity.java      # WebView、KokonaBridge、生命周期
-│   │   ├── EngineService.java     # 前台服务、引擎进程管理
-│   │   ├── RuntimeInstaller.java  # 运行时解包/清单增量更新（r29）
-│   │   ├── LocalBridgeServer.java # loopback HTTP：/policy /confirm /screenshot …
-│   │   ├── AndroidPermissions.java# 九项能力授权持久化
-│   │   ├── ConfirmationGate.java  # 原生确认弹窗
-│   │   ├── AndroidCapabilities.java # 无障碍/通知/媒体/剪贴板等实现
-│   │   ├── RunMode.java           # 普通 / Shizuku / Root
-│   │   ├── ScreenshotAccessibilityService.java
-│   │   └── NotificationAccessService.java
-│   ├── res/                       # 图标、无障碍说明等
-│   ├── libs/                      # Shizuku、xz.jar
-│   └── assets/
-│       ├── runtime.tar.xz         # 构建产物（不入库）
-│       └── seed/                  # DSH profile 种子
-├── knhplus-mcp/                   # KNHPlus MCP server（server.mjs）
-├── runtime-skills/                # 随运行时下发的技能说明
-│   ├── android-capabilities/
-│   └── python-runtime/
-├── branding/                      # 品牌矢量与说明
-├── assets-src/                    # 背景等源资源
-├── build-runtime.sh               # 组装 arm64 运行时快照
-├── build-nodepty.sh               # 交叉编译 node-pty（NDK + Termux 头文件）
-├── build.sh                       # aapt2 + javac + d8 + zipalign + apksigner
-├── runtime-patches/               # 运行时定制补丁存档（设置页、require-builtin 回退）
-└── README.md
-```
+AI 想动手机上的东西，得先过这九道开关。每一项都能单独设成「直接允许 / 每次问我 / 关掉」：
 
-DSH UI 的定制补丁主要打在 `node_modules/@deepseek-ai/...` 的构建树上，构建时由 `build-runtime.sh` 一起打包；设置页补丁同时存档在 `runtime-patches/`，其余清单见本文末“运行时定制”。
+| capability | 含义 | 默认 |
+|---|---|---|
+| `screen` | 读取屏幕（无障碍节点/前台应用） | allow |
+| `screenshot` | 截图 | allow |
+| `input` | 点击、滑动、输入 | ask |
+| `system` | 打开应用、返回/Home、系统设置 | ask |
+| `notifications_read` | 读取通知 | allow |
+| `notifications_act` | 点击/清除通知 | ask |
+| `media` | 媒体控制、音量/亮度 | ask |
+| `clipboard` | 读写剪贴板 | ask |
+| `feedback` | TTS、震动/提示 | allow |
+
+`allow` 直接执行；`ask` 弹原生确认；`deny` 返回「权限已关闭」。模型通过 `android_policy` 只能读取当前状态。
+
+## 安全模型与边界
+
+**定位**：九项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
+
+已实施（1.2.0）：
+
+1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
+2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点「允许」后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
+3. **token 不再进 URL**：改为 `Authorization: Bearer`；控制文件权限从错误的全局可读修正为仅 owner 可读写。token 不进 WebView、不进日志。
+4. **确认框防轰炸**：用 `onResume`/`onPause` 判断真实可见性，不可见立即返回 `app_not_visible`，不再空等 45 秒；最多 3 个待处理请求，弹窗最小间隔 1.2 秒。
+5. **敏感 Bridge 方法加原生确认**：修改授权、恢复默认、切换运行模式、请求 Root/Shizuku 都会先弹原生框，网页脚本无法静默提权。
+
+已知边界（未覆盖）：
+
+- **fs 不在授权内**：`dsh-fs-local` 没有 allow/ask/deny 检查；DSH 权限 preset 在内核 < 5.13 时直接 `danger-full-access`。
+- **同 UID 信任边界**：bash/插件可读写 `kokona_permissions.xml`、token、runtime 中的 `server.mjs`；Root 模式下整个引擎以 root 启动，九项授权对 shell/fs 无约束力。
+- **审批绑定粒度**：`/confirm` 文案仍由调用方构造（含模型参数），grant 绑定的是「能力」而非单次具体动作。
+- **持久化未脱敏**：截图与无障碍文本会以明文进入 DSH 会话 JSONL；本轮未做字段级脱敏。
+
+## 已知限制
+
+- **glibc 程序按需运行**：默认所有命令仍走 bionic，不经任何兼容层；构建时可带入独立的 `kokona-glibc` 与 `kokona-grun` 启动器，让以 glibc 链接的 arm64 程序直接运行，无需 proot / ptrace。若构建时未提供 glibc staging，该运行时不附带此能力。用法与限制见 [`runtime-skills/glibc-runtime/SKILL.md`](runtime-skills/glibc-runtime/SKILL.md)；硬编码 `/etc/resolv.conf`、`/etc/ssl` 的 Go/Rust 静态二进制仍无法覆盖。
+- **语音与 Office 转换**：上游 `sherpa-onnx`、`libreoffice-kit` 的二进制面向 glibc 且在 `process.platform === "android"` 时主动拒绝启动，Android 上这两类能力默认不可用；图像处理走 `sharp-wasm32`。随包的 `libreoffice-kit-wasm`（约 146 MB）在 Android 上是纯死重，已从运行时移除。
+- **终端 PTY**：已用 NDK 交叉编译 `node-pty` 的 N-API 模块（`prebuilds/android-arm64/pty.node`），不再依赖上游预编译。
+- **Android 10+ 执行限制**：依赖 `targetSdk 28` 的兼容豁免才能从 App 私有目录 exec / 加载本地二进制；因此目前以 APK 侧载为目标，不走应用商店。
 
 ## 构建
+
+这几条命令做的是「组装」而不是「从零编译」——Node、Python、Termux 工具链都是预先备好的素材，
+脚本负责裁剪、打包、签名。动手前先确认下面三份素材，否则会在中途报 `missing ...`。
+
+> [!NOTE]
+> 首个 Release 提供预编译 APK；模型 API Key 需自备。三个脚本默认按 Linux 布局
+> （`/workspace/build`、无后缀 `aapt2`、`prebuilt/linux-x86_64`），在 Windows 上可用
+> `BUILD_DIR` / `ANDROID_SDK_ROOT` / `ANDROID_NDK_HOME` / `NODE_MODULES` / `PY_SRC`
+> 等环境变量重定向，或直接在 WSL 里跑，不必改代码。
+> **Windows 上完整跑通踩过的坑**（路径转换、classpath 分隔符、`-encoding UTF-8`、
+> Unix 执行位丢失、tar/PAX、`xz`、批量删除保护、CPython 只能 Linux 宿主等）
+> 集中记在 [`WINDOWS-BUILD.md`](WINDOWS-BUILD.md)。
+
+**三份必备素材**
+
+| 素材 | 位置 | 说明 |
+|---|---|---|
+| Termux arm64 运行时 | `$BUILD_DIR/termux-debs/ext/` | 约 40 个 `.deb` 解包，提供 node / bash / rg 及依赖库。脚本按**固定版本**引用 `.so`（如 `libicu.so.78.3`、`libz.so.1.3.2`），换快照需同步改脚本 |
+| DSH 的 npm 树 | `$BUILD_DIR/rt/node_modules/` | 安装 `@deepseek-ai/dsh@0.2.2-rc.1` 后打上 `runtime-patches/`、`tools/*.mjs` 的定制补丁；国内可用 npmmirror |
+| Python 3.15.2 | `$BUILD_DIR/py-build/pyinstall/`（可用 `PY_SRC` 覆盖） | **完整 CPython 发行版**：`bin/python3.15` + `lib/libpython3.15.so` + 整套 `lib/python3.15`。仓库不生成它，需自行交叉编译 |
+
+**Python 这份要特别留意**：CPython 的 Android 交叉编译只支持 **Linux / macOS 宿主**
+（官方 `Android/README.md`：Windows 上不能在本机完成构建，需从别处拷 `prefix`），
+因为它要先用宿主工具链编一份 build Python 来引导。Windows 用户走 WSL2 时，
+NDK 也必须用 **Linux 版**（`prebuilt/linux-x86_64`）——`build-nodepty.sh` 用的 Windows 版
+不能拿来编 CPython。编好后把 prefix 放进 `pyinstall/`，后续组装在 Windows 上照样能跑。
+
+可选：`$BUILD_DIR/glibc-run/staging/` 提供 `kokona-grun`，缺失时只打印 warning；
+上面三份缺任意一份会直接报错退出。
 
 ```bash
 # 1) 准备 /workspace/build/rt/node_modules（npm 安装 @deepseek-ai/dsh 后打入定制补丁）
@@ -89,6 +184,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 
 `build-runtime.sh` 会自动：
+
 - 复制 Termux bionic arm64 的 node/bash/rg 与依赖库；
 - 复制 `node_modules`，删除 `.bin` 与符号链接；
 - 移除 Linux 桌面专属的 ripgrep、sherpa-onnx、sharp、koffi 二进制；
@@ -97,108 +193,75 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 - 保留 `node-pty` 的 `android-arm64` / `linux-arm64` 预编译；
 - 用 `runtime-patches/node-addon-require-builtin-android.js` 替换 `node-addon-require-builtin` 的原生入口；
 - 装入 pnpm 原生 arm64 与 dshmarket；
-- 写入 CLI shim（`dsh`、`pnpm`、`gunzip` 等）。
+- 写入 CLI shim（`dsh`、`pnpm`、`gunzip` 等）；
+- 视构建环境带入可选的 `kokona-glibc` / `kokona-grun`。
 
-## 能力粒度授权
+## 目录结构
 
-| capability | 含义 | 默认 |
-|---|---|---|
-| `screen` | 读取屏幕（无障碍节点/前台应用） | allow |
-| `screenshot` | 截图 | allow |
-| `input` | 点击、滑动、输入 | ask |
-| `system` | 打开应用、返回/Home、系统设置 | ask |
-| `notifications_read` | 读取通知 | allow |
-| `notifications_act` | 点击/清除通知 | ask |
-| `media` | 媒体控制、音量/亮度 | ask |
-| `clipboard` | 读写剪贴板 | ask |
-| `feedback` | TTS、震动/提示 | allow |
+```
+KokonaHarness-Android/
+├── app/
+│   ├── AndroidManifest.xml        # versionCode 134 / versionName 1.3.4
+│   ├── java/com/kokonaharness/android/akizuki/
+│   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
+│   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
+│   │   ├── RuntimeInstaller.java  # 运行时全量解包 + 原子替换 + 执行位修复
+│   │   ├── TarExtractor.java      # 精简 tar/PAX 解包器
+│   │   ├── LocalBridgeServer.java # loopback HTTP：/policy /confirm /screenshot …
+│   │   ├── AndroidPermissions.java# 九项能力授权持久化
+│   │   ├── ConfirmationGate.java  # 原生确认弹窗
+│   │   ├── AndroidCapabilities.java # 无障碍/通知/媒体/剪贴板等实现
+│   │   ├── RunMode.java           # 普通 / Shizuku / Root
+│   │   ├── Diagnostics.java       # 错误页诊断信息
+│   │   ├── ScreenshotAccessibilityService.java
+│   │   ├── NotificationAccessService.java
+│   │   └── ToastCompat.java
+│   ├── res/                       # 图标、无障碍说明等
+│   ├── libs/                      # Shizuku、xz.jar
+│   └── assets/
+│       ├── runtime.tar.xz         # 构建产物（不入库）
+│       ├── kha-node-patch.cjs     # Node 26 package.json reader 兜底
+│       └── seed/                  # DSH profile 种子
+├── knhplus-mcp/                   # KNHPlus MCP server（server.mjs）
+├── runtime-skills/                # 随运行时下发的技能说明
+│   ├── android-capabilities/
+│   ├── python-runtime/
+│   └── glibc-runtime/
+├── branding/                      # 品牌矢量与图标源素材
+├── assets-src/                    # 背景等源资源
+├── tools/                         # 构建期补丁脚本 + check-shim.cjs
+├── build-runtime.sh               # 组装 arm64 运行时快照
+├── build-nodepty.sh               # 交叉编译 node-pty（NDK + Termux 头文件）
+├── build.sh                       # aapt2 + javac + d8 + zipalign + apksigner
+├── runtime-patches/               # 运行时定制补丁存档（设置页、require-builtin 回退）
+├── WINDOWS-BUILD.md               # Windows 构建踩坑与速查表
+└── README.md
+```
 
-`allow` 直接执行；`ask` 弹原生确认；`deny` 返回“权限已关闭”。模型通过 `android_policy` 只能读取当前状态。
+DSH UI 的定制补丁主要打在 `node_modules/@deepseek-ai/...` 的构建树上，构建时由 `build-runtime.sh` 一起打包；设置页补丁同时存档在 `runtime-patches/`，其余清单见本文末「运行时定制」。
 
-## 安全模型与边界
+## 最近更新
 
-**定位**：九项授权是“防误操作”的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
+<details>
+<summary>展开开发记录（1.2.0 – 1.3.4）</summary>
 
-已实施（1.2.0）：
+**1.3.4（首个公开版）** 修掉真机启动失败（Termux `libcrypto.so.3` 写死 `OPENSSLDIR`，改用自带 `openssl.cnf` + `OPENSSL_CONF`）；用 `kha-node-patch.cjs` 兜住 Node 26 原生 package.json reader 的 `ERR_INVALID_PACKAGE_CONFIG`；修 `.dsh` 目录不可写导致的插件装卸 EACCES、pnpm 执行位丢失，以及内置插件每次启动复活（现在可自由安装 / 卸载）；**彻底移除 manifest 增量更新，改为全量原子替换**并加完整性自检；设置页改为启动时幂等补丁（终端入口、禁用桌面端「打开配置文件」、去掉造成花屏的全屏半透明层与 blur）。首个 Release 同时提供 APK，跳过此前所有版本。
 
-1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
-2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点“允许”后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
-3. **token 不再进 URL**：改为 `Authorization: Bearer`；控制文件权限从错误的全局可读修正为仅 owner 可读写。token 不进 WebView、不进日志。
-4. **确认框防轰炸**：用 `onResume`/`onPause` 判断真实可见性，不可见立即返回 `app_not_visible`，不再空等 45 秒；最多 3 个待处理请求，弹窗最小间隔 1.2 秒。
-5. **敏感 Bridge 方法加原生确认**：修改授权、恢复默认、切换运行模式、请求 Root/Shizuku 都会先弹原生框，网页脚本无法静默提权。
+**1.3.4** 修掉设置页被侧栏抽屉遮挡的问题，品牌图标只在无对话框时生效；引擎启动时写入系统真实 DNS，为 `kokona-grun` 增加兜底；新增 `brand.svg`、runtime manifest 工具与 `glibc-runtime` 技能说明，并同步构建脚本。
 
-已知边界（未覆盖）：
+**1.2.2** 运行时改为按 manifest 增量更新，比对 sha256 后只重写变化文件，失败保留旧版本下次重试；版本滚动到 r29。修掉插件市场侧栏图标重复，并预装 `dsh-better-sidebar@0.30.1`（右侧文件树 / 编辑器 / 变更 / 任务 / 侧聊工作台），补上窄屏 CSS 与手势避让。
 
-- **fs 不在授权内**：`dsh-fs-local` 没有 allow/ask/deny 检查；DSH 权限 preset 在内核 < 5.13 时直接 `danger-full-access`。
-- **同 UID 信任边界**：bash/插件可读写 `kokona_permissions.xml`、token、runtime 中的 `server.mjs`；Root 模式下整个引擎以 root 启动，九项授权对 shell/fs 无约束力。
-- **审批绑定粒度**：`/confirm` 文案仍由调用方构造（含模型参数），grant 绑定的是“能力”而非单次具体动作。
-- **持久化未脱敏**：截图与无障碍文本会以明文进入 DSH 会话 JSONL；本轮未做字段级脱敏。
+**1.2.1** 修复 1.2.0 的启动崩溃：丢失的 `node-addon-require-builtin` Android 补丁会让引擎在 host preparation 阶段退出；现以 `--expose-internals` 的 JS 回退替代，并由 `EngineService.ensureRuntimePatch()` 每次启动写入。同时加入侧栏左右滑开合、Kokona 签名展开按钮，修掉 shim 冲突让键盘 inset 真正生效。
 
-## 已知限制
+**1.2.0** 安全加固：Java 侧 `/plus` 独立复核 `action → capability`，`deny` 最终生效，`ask` 需一次性 120 秒 grant；token 改 `Authorization: Bearer`、控制文件 0600；确认框按真实前后台可见性判定，最多 3 个待处理、间隔 1.2 秒；改授权、重置、切模式、请求 Root/Shizuku 均需原生确认。
 
-- **glibc 预编译包不可用**：官方 `sherpa-onnx`、`libreoffice-kit` 的 Linux 二进制是 glibc 的，bionic 无法加载。Android 上图像走 `sharp-wasm32`；语音、办公转换默认不可用。
-- **Office 技能**：`dsh-skill-office` 的文档处理全部依赖 `libreoffice-kit`，而 kit 在 `process.platform === "android"` 时明确拒绝启动。因此随包的 `libreoffice-kit-wasm`（约 146MB）在 Android 上是纯死重，已从运行时移除。
-- **终端 PTY**：已用 NDK 交叉编译 `node-pty` 的 N-API 模块（`prebuilds/android-arm64/pty.node`），不再依赖上游预编译。
-- **Android 10+ 执行限制**：依赖 `targetSdk 28` 的兼容豁免才能从 app 私有目录 exec/加载本地二进制。
+**1.2.0（续）** 设置页右上角加入终端入口；为 Android 交叉编译 `node-pty@1.2.0-beta.15` 的 N-API 模块；包体瘦身（移除 146 MB 办公 WASM、桌面原生二进制、`.d.ts` 与重复 `zod/src`），APK 约 90.3 MiB（94,684,584 字节）；软键盘遮挡适配（viewport meta、`visualViewport` inset、原生 IME 兜底）。
 
-## 本轮进度
-
-1. ✅ **设置页右上角终端按钮**
-   - 在 `settings.action` 槽位注册“终端”按钮（设置面板右上角、关闭按钮左侧）。
-   - 点击后：若当前有会话 → 关闭设置面板并 `sidebarRight.openTab("terminal")`；无会话 → 按钮禁用。
-   - 窄屏只留 `>_` 符号，避免与关闭按钮挤压。
-
-2. ✅ **为 Android 编译 node-pty**
-   - `node-pty@1.2.0-beta.15` 的 N-API 模块，已编译为 `prebuilds/android-arm64/pty.node`（同时放置 `linux-arm64` 以兼容 Termux Node 的平台报告）。
-   - 工具链：NDK 27.2 `aarch64-linux-android27-clang++` + Termux Node 头文件 + `node-addon-api`，由 [build-nodepty.sh](file:///workspace/KokonaHarness/build-nodepty.sh) 复现。
-   - 产物仅依赖 `libc/libm/libdl`，无需额外共享库。
-
-3. ✅ **包体瘦身**
-   - 移除办公 WASM（146MB）、Linux 桌面原生二进制、`.d.ts`、嵌套 `zod/src`。
-   - 结果：runtime 原始 606MB / 压缩 90MB；APK 94,684,584 字节（约 90.3 MiB），低于 DSH Go 的 183.8 MiB。
-
-4. ✅ **软键盘遮挡布局（WebView / 浏览器）**
-   - 页面 meta：`viewport-fit=cover` + `interactive-widget=resizes-content`。
-   - Web 层：`visualViewport` 的 `resize`/`scroll` 写入 `--kn-keyboard-inset`；`focusin` 时 `scrollIntoView({ block: "center" })`，260ms 延迟等键盘动画结束。
-   - 原生兜底：`setOnApplyWindowInsetsListener` 按 IME inset 给 WebView 补底部 padding；`adjustResize` 生效时 inset 已为 0，此路径自动无操作。
-   - 不改动 DSH 原生布局，插件无需感知。
-
-5. ✅ **安全加固（1.2.0）**
-   - Java 侧 `/plus` 独立复核 `action → capability`，`deny` 最终生效；`ask` 需一次性 120 秒 grant。
-   - token 改 `Authorization: Bearer`，控制文件 0600；确认框按真实前后台可见性判定，最多 3 个待处理、间隔 1.2 秒。
-   - 改授权、重置、切模式、请求 Root/Shizuku 均需原生确认，网页无法静默提权。
-
-6. ✅ **启动崩溃修复（1.2.1）**
-   - 现象：安装 1.2.0 后 App 报“引擎进程已退出（1）”，100% 复现。
-   - 原因：1.2.0 的运行时按 0.2.2-rc.1 原始 npm 树重建，丢失了此前对 `node-addon-require-builtin` 的 Android 补丁。该包 0.1.9 的 `optionalDependencies` 只有 darwin/linux/win32 变体，Android 上既找不到 `node-addon-require-builtin-android-arm64`，包内也没有 `build/napi/napi-v9-android-arm64/require_builtin.node`，于是 `dsh-app-boot` 在 host preparation 阶段抛 `No usable native binding found`，引擎以 exit 1 退出。
-   - 修复：新增 `runtime-patches/node-addon-require-builtin-android.js`，用 `createRequire(__filename)` 直接 `require("internal/…")`（引擎本来就以 `--expose-internals` 启动），由 `build-runtime.sh` 覆盖该包的 `lib/index.js`。
-   - 验证：伪造 `process.platform === "android"`、`arch === "arm64"` 启动同一运行时，修复前稳定复现同一堆栈，修复后正常打印 `dsh web: http://127.0.0.1:…`。
-   - 升级路径：1.2.1 保持 runtime 标记为 r28，`EngineService.ensureRuntimePatch()` 每次启动把该回退文件写入已安装运行时。1.2.0 用户升级后不会再重解压 606 MB、39,366 个文件的快照。
-   - 启动耗时（模拟 android/arm64，同 profile）：0.2.1 到 URL 3.56 s，0.2.2 4.08 s（约 +15%）。更新后“慢很多”主要来自一次性解压（95 MB xz → 606 MB，主机 5.8 s，手机通常 20–50 s）。
-
-7. ✅ **侧栏手势与品牌展开按钮（1.2.1）**
-   - 收起状态：从屏幕左三分之一向右滑可打开；展开状态：从右向左滑可收起（700 ms 内、水平位移 > 70 px、纵向偏移 < 70 px）。
-   - 收起后的左上角展开按钮替换为 Kokona 签名图（`app/assets/brand.svg`），展开后保持原样，侧栏内收起按钮不变。
-   - 顺带修复 1.2.0 的 shim 冲突：运行时 `index.html` 已设置 `__KOKONA_SHIM__`，原生侧 shim 改用独立的 `__KOKONA_NATIVE_SHIM__` 守卫，键盘 inset 逻辑现在真正生效。
-
-8. ✅ **增量运行时更新与版本滚动（1.2.2）**
-   - 此前 `RuntimeInstaller` 在标记不匹配时删除整个运行时目录再解压，每次升级都要重写约 550 MB。
-   - `build-runtime.sh` 现在生成 `app/assets/runtime.manifest`（每个文件一行 `sha256 字节数 相对路径`，约 3.5 万个文件）；安装器先比对清单，`TarExtractor` 对未变化条目只消费数据流、不落盘，成功后再删除新快照中已不存在的旧文件。
-   - 失败不再删目录：版本标记保持旧值，下次启动按同一差分重试；首次从 r28（无清单）升级时，对现有文件做一次 sha256 校验，仍只重写真正变化的文件，不需要额外 550 MB 空闲空间。
-   - 运行时版本正常滚动到 r29，App 1.2.2 / versionCode 122 同步更新。
-
-9. ✅ **插件市场侧边栏图标重复修复（1.2.2）**
-   - 原因：宿主 `dsh-client-ui-plugin-manager` 已在侧栏注册“插件”行，`dshmarket` 又注册了自己的可选市场行，两者同时出现即为两个图标。
-   - 修复：`tools/patch-dshmarket-sidebar.mjs` 在构建时把市场行的 `sidebarGate` 固定为不可见；市场仍可从插件页的“市场”标签和设置页进入，功能不受影响。
-
-10. ✅ **预装 dsh-better-sidebar（1.2.2）**
-   - 随运行时打包 `dsh-better-sidebar@0.30.1`（右侧文件树/编辑器/变更/任务/侧聊工作台），并加入 profile 依赖、bundle 列表与 `node_modules` 链接；由 bundle 自带的 `cordis.patch.yml` 单次挂载，不重复注入。
-   - 竖屏：插件本身按会话列矩形定位；App 侧补充窄屏 CSS（面板 `max-width: 100vw`、底部工作台占满宽度），并让左右滑手势忽略从面板内部开始的横向滑动，避免与编辑器/终端手势冲突。
-   - 现有定制不受影响：设置页“手机权限”、右上角终端入口、品牌签名展开按钮与键盘 inset 均走原有路径。
+</details>
 
 ## 运行时定制
 
-构建树中已应用的品牌/移动端定制（升级 DSH 时需重新移植）：
+构建树中已应用的品牌 / 移动端定制（升级 DSH 时需重新移植）：
 
 - `dsh-client-ui-settings-general`：移动端导航宽度、`title` 属性、环境高级设置页、手机权限页（九项 allow/ask/deny）、右上角终端入口。
 - `dsh-client-ui-sidebar`：收起为小 K，展开为完整 Kokona 签名 + HARNESS；App 侧另将完全收起的展开按钮换成签名图，并加入左右滑手势。
@@ -215,6 +278,9 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 
 ## 版本
 
-- App：1.2.2（122）
-- DSH：0.2.2-rc.1
-- Runtime：dsh-0.2.2-rc.1-r29
+- App：**1.3.4**（versionCode 134）
+- DSH：**0.2.2-rc.1**
+- Runtime：**dsh-0.2.2-rc.1-r33**
+- 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
+- APK：102,815,372 B（约 98.1 MiB），其中 `runtime.tar.xz` 102,159,884 B
+- 仓库：public · 首个 Release 以当前版本为准，跳过此前所有版本
