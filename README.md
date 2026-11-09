@@ -8,13 +8,13 @@
 
 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 是一个会读文件、跑脚本、调工具的 AI 引擎，过去主要待在电脑和服务器上。KokonaHarness 做的事很单纯：让这套引擎直接跑在 Android 手机上，界面沿用官方的 DSH Web UI，再把手机自己的屏幕、通知、剪贴板、截图这些能力，一项一项按你的授权交给它。
 
-> Android 8.1+ · arm64 · 当前 **1.0.36**（136）· 内置 DSH **0.2.2-rc.1** / 运行时 **r33**
+> Android 8.1+ · arm64 · 当前 **1.0.36**（136）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r33**
 
 ## 我们的路线：不用 PRoot，也不为兼容退回 PRoot
 
 把 Linux 工具搬上 Android，常见做法是先造一个完整的 Linux 用户空间，再让所有程序住进去。KokonaHarness 选了另一条路，关键在两个点：
 
-- **Node.js 直接跑在 Android 原生的 bionic 上。** 没有 PRoot、没有 Ubuntu 根文件系统、没有 ptrace 拦截——引擎启动就是启动一个普通进程。运行时因此做得更轻，升级按整包全量替换，状态干净、不残留半更新文件。
+- **Node.js 直接跑在 Android 原生的 bionic 上。** 没有 PRoot、没有 Ubuntu 根文件系统、没有 ptrace 拦截——引擎启动就是启动一个普通进程。KokonaRuntime 因此做得更轻，升级按整包全量替换，状态干净、不残留半更新文件。
 - **遇到 glibc 程序，交给 `kokona-grun` 按需接住，而不是回头开一个容器。** 默认所有命令仍走 bionic、性能不变；只有以 glibc 链接的 Linux arm64 程序才切换到构建时可带入的独立 glibc 运行器，同样零 PRoot、零 ptrace，启动接近原生。用法与边界见 [`runtime-skills/glibc-runtime/SKILL.md`](runtime-skills/glibc-runtime/SKILL.md)。
 
 换句话说：**从引擎到兼容层，整套运行时都不依赖 PRoot**。这是本项目与「内置完整 Linux 环境」那类路线最根本的区别。
@@ -25,7 +25,7 @@
 - **让 AI 帮你点手机。** 读屏幕、看通知、点按输入、截图、调媒体和亮度——九项能力各自设成「允许 / 每次询问 / 关闭」，需要确认时由系统弹窗问你，模型没法自己改授权。
 - **还是你熟悉的那套 DSH。** 会话、模型切换、插件市场、终端标签、文件树工作台都在，界面是官方 Web UI 加了一点移动端适配，不是另起炉灶的简化版。
 - **Linux 命令行工具也能带进来。** 碰到以 glibc 链接的 arm64 程序，不必为了一个工具先装一整套 Linux；`kokona-grun` 直接接住，模型会按 `glibc-runtime` 技能先判断 ELF 解释器再决定怎么跑。
-- **装一次，升级不折腾。** 运行时随 App 一起打包；升级时先解到临时目录再原子替换旧树，不会留下半套运行时。小修复走启动时自愈，不必重打整包。
+- **装一次，升级不折腾。** KokonaRuntime 随 App 一起打包；升级时先解到临时目录再原子替换旧树，不会留下半套运行时。小修复走启动时自愈，不必重打整包。
 
 ## 先把几件事说清楚
 
@@ -39,7 +39,7 @@
 
 1. 直接装 [Release 里的 APK](../../releases/latest)，或准备构建环境（Node/npm 依赖、Android SDK/NDK、Termux arm64 运行时素材）后依次执行 `build-nodepty.sh` → `build-runtime.sh` → `build.sh`。
 2. 安装后按系统提示允许「安装未知来源」（项目以侧载为目标，`targetSdk 28`）。
-3. 首次启动会解包内置运行时（约 583 MiB），稍等片刻；小修复与执行位补会在每次启动时自愈，无需重装。
+3. 首次启动会解包 `KokonaRuntime`（约 583 MiB），稍等片刻；小修复与执行位补会在每次启动时自愈，无需重装。
 4. 在 DSH 设置里配好模型凭据（服务方 / API Key），就可以开始派活了。建议先从不涉及删除、支付的任务试起。
 
 ## 和 DSH Go：同一个目标，两条路线
@@ -54,7 +54,7 @@
 | 界面 | 复用**官方 DSH Web UI**（WebView）+ 移动端定制 | 自研 **Flutter 原生界面**，可切网页版 |
 | 连回电脑 | 暂未提供 | **SSH / DSH Remote** |
 | 手机操控的授权 | **九项能力**各自 allow / ask / deny，ask 走原生确认闸门 | 三档确认（每次询问 / 本任务 / 始终），敏感操作默认交还用户 |
-| 运行环境形态 | 运行时快照压缩约 97 MiB、解压约 583 MiB，整包全量替换 | 首次本机环境建议预留约 1 GB，arm64 APK 约 185 MiB |
+| 运行环境形态 | KokonaRuntime 快照压缩约 97 MiB、解压约 583 MiB，整包全量替换 | 首次本机环境建议预留约 1 GB，arm64 APK 约 185 MiB |
 | 获取方式 | 源码发布，自行构建 | Release 提供 arm64 APK 与完整使用文档 |
 
 > 表中体积与占用取自各自公开记录中的构建数据，会随版本变化。
@@ -63,7 +63,7 @@
 
 ## 整体架构
 
-一句话概括：WebView 负责「看得见的界面」，Android 原生层负责「手机才有的能力」，最底下是随 App 一起打包的 Node.js 运行时。
+一句话概括：WebView 负责「看得见的界面」，Android 原生层负责「手机才有的能力」，最底下是随 App 一起打包的 `KokonaRuntime`（内置 Node.js 运行时）。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -80,7 +80,7 @@
 └───────────────┬─────────────────────────────────────────┘
                 │ loopback HTTP / stdio / MCP
 ┌───────────────▼─────────────────────────────────────────┐
-│  内置运行时（App 私有目录）                              │
+│  KokonaRuntime（App 私有目录）                           │
 │  node (Termux bionic arm64) + bash + git/ripgrep/…        │
 │  node_modules: @deepseek-ai/dsh 及全部官方依赖            │
 │  runtime-skills: android-capabilities / python-runtime    │
@@ -95,7 +95,7 @@
 - **薄原生桥**：Java 侧只做 Android 特有的事（无障碍、通知读取、Shizuku/Root、截图、剪贴板、震动、TTS），其余全部交给 DSH 插件与 MCP。
 - **能力逐项授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），九项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；授权项在 `KHA-Setthings` 插件提供的专属设置页中展示与修改。
 - **确认闸门**：`ask` 能力触发 `ConfirmationGate` 原生弹窗，45 秒无响应按拒绝处理；App 不可见时不弹窗，并提示先打开 App。
-- **运行时全量安装**：`RuntimeInstaller` 把新快照解到 staging，确认完整后把旧目录 rename 为 `.old`、staging 转正，再删旧树；`runtimeLooksComplete()` 抽查关键文件，避免「版本号相同但目录是空的」被误判为已安装。小修复（JS 补丁、执行位）由 `EngineService` 每次启动幂等写入，不重打整包。
+- **KokonaRuntime 全量安装**：`RuntimeInstaller` 把新快照解到 `KokonaRuntime.new`，确认完整后把旧目录 rename 为 `KokonaRuntime.old`、staging 转正，再删旧树；`runtimeLooksComplete()` 抽查关键文件，避免「版本号相同但目录是空的」被误判为已安装。小修复（JS 补丁、执行位）由 `EngineService` 每次启动幂等写入，不重打整包。
 
 ## 手机能力：九项授权
 
@@ -136,8 +136,8 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 
 ## 已知限制
 
-- **glibc 程序按需运行**：默认所有命令仍走 bionic，不经任何兼容层；构建时可带入独立的 `kokona-glibc` 与 `kokona-grun` 启动器，让以 glibc 链接的 arm64 程序直接运行，无需 proot / ptrace。若构建时未提供 glibc staging，该运行时不附带此能力。用法与限制见 [`runtime-skills/glibc-runtime/SKILL.md`](runtime-skills/glibc-runtime/SKILL.md)；硬编码 `/etc/resolv.conf`、`/etc/ssl` 的 Go/Rust 静态二进制仍无法覆盖。
-- **语音与 Office 转换**：上游 `sherpa-onnx`、`libreoffice-kit` 的二进制面向 glibc 且在 `process.platform === "android"` 时主动拒绝启动，Android 上这两类能力默认不可用；图像处理走 `sharp-wasm32`。随包的 `libreoffice-kit-wasm`（约 146 MB）在 Android 上是纯死重，已从运行时移除。
+- **glibc 程序按需运行**：默认所有命令仍走 bionic，不经任何兼容层；构建时可带入独立的 `kokona-glibc` 与 `kokona-grun` 启动器，让以 glibc 链接的 arm64 程序直接运行，无需 proot / ptrace。若构建时未提供 glibc staging，该 KokonaRuntime 不附带此能力。用法与限制见 [`runtime-skills/glibc-runtime/SKILL.md`](runtime-skills/glibc-runtime/SKILL.md)；硬编码 `/etc/resolv.conf`、`/etc/ssl` 的 Go/Rust 静态二进制仍无法覆盖。
+- **语音与 Office 转换**：上游 `sherpa-onnx`、`libreoffice-kit` 的二进制面向 glibc 且在 `process.platform === "android"` 时主动拒绝启动，Android 上这两类能力默认不可用；图像处理走 `sharp-wasm32`。随包的 `libreoffice-kit-wasm`（约 146 MB）在 Android 上是纯死重，已从 KokonaRuntime 移除。
 - **终端 PTY**：已用 NDK 交叉编译 `node-pty` 的 N-API 模块（`prebuilds/android-arm64/pty.node`），不再依赖上游预编译。
 - **Android 10+ 执行限制**：依赖 `targetSdk 28` 的兼容豁免才能从 App 私有目录 exec / 加载本地二进制；因此目前以 APK 侧载为目标，不走应用商店。
 
@@ -177,7 +177,7 @@ NDK 也必须用 **Linux 版**（`prebuilt/linux-x86_64`）——`build-nodepty.
 # 2) 交叉编译 Android PTY（NDK 27.2 + Termux node 头文件）
 ./build-nodepty.sh
 
-# 3) 组装运行时（产出 app/assets/runtime.tar.xz）
+# 3) 组装 KokonaRuntime（产出 app/assets/runtime.tar.xz）
 ./build-runtime.sh
 
 # 4) 打包 APK
@@ -226,14 +226,14 @@ KokonaHarness-Android/
 │       ├── KHA-Setthings/         # 专属设置插件（启动时解压进 runtime）
 │       └── seed/                  # DSH profile 种子
 ├── knhplus-mcp/                   # KNHPlus MCP server（server.mjs）
-├── runtime-skills/                # 随运行时下发的技能说明
+├── runtime-skills/                # 随 KokonaRuntime 下发的技能说明
 │   ├── android-capabilities/
 │   ├── python-runtime/
 │   └── glibc-runtime/
 ├── branding/                      # 品牌矢量与图标源素材
 ├── assets-src/                    # 背景等源资源
 ├── tools/                         # 构建期补丁脚本 + check-shim.cjs
-├── build-runtime.sh               # 组装 arm64 运行时快照
+├── build-runtime.sh               # 组装 KokonaRuntime 快照
 ├── build-nodepty.sh               # 交叉编译 node-pty（NDK + Termux 头文件）
 ├── build.sh                       # aapt2 + javac + d8 + zipalign + apksigner
 ├── runtime-patches/               # 历史定制补丁存档（设置页已停用、require-builtin 回退）
@@ -241,7 +241,7 @@ KokonaHarness-Android/
 └── README.md
 ```
 
-设置页现已退回官方原版：`EngineService.restoreOfficialSettings()` 每次启动把 `assets/official-settings-client.js` 覆盖到已安装的运行时，不必重打 100 MB 快照；`runtime-patches/` 里的设置页补丁仅作历史存档、不再生效。我们的自有功能改由独立插件 **`KHA-Setthings`** 提供：启动时把 `assets/KHA-Setthings/` 的三个小文件解压到运行时 `lib/node_modules/KHA-Setthings/`，并一次性注册进 profile 的 `dsh.profile.bundles`。插件只注册一个 `settings.section`（运行模式 / 手机能力授权 / 关于，上下排列）和右上角的终端 `settings.action`，**完全不改官方设置布局**；桌面端专属的「打开配置文件」按钮由 WebView shim 一条 CSS 隐藏。其余 DSH UI 定制仍打在 `node_modules/@deepseek-ai/...` 的构建树上，清单见本文末「运行时定制」。
+设置页现已退回官方原版：`EngineService.restoreOfficialSettings()` 每次启动把 `assets/official-settings-client.js` 覆盖到已安装的 `KokonaRuntime`，不必重打 100 MB 快照；`runtime-patches/` 里的设置页补丁仅作历史存档、不再生效。我们的自有功能改由独立插件 **`KHA-Setthings`** 提供：启动时把 `assets/KHA-Setthings/` 的三个小文件解压到 `KokonaRuntime/lib/node_modules/KHA-Setthings/`，并一次性注册进 profile 的 `dsh.profile.bundles`。插件只注册一个 `settings.section`（运行模式 / 手机能力授权 / 关于，上下排列）和右上角的终端 `settings.action`，**完全不改官方设置布局**；桌面端专属的「打开配置文件」按钮由 WebView shim 一条 CSS 隐藏。其余 DSH UI 定制仍打在 `node_modules/@deepseek-ai/...` 的构建树上，清单见本文末「运行时定制」。
 
 ## 最近更新
 
@@ -285,7 +285,7 @@ KokonaHarness-Android/
 
 - App：**1.0.36**（versionCode 136）
 - DSH：**0.2.2-rc.1**
-- Runtime：**dsh-0.2.2-rc.1-r33**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r33**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
-- 运行时快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
+- KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
