@@ -44,6 +44,14 @@ fi
 rm -rf "$OUT"
 mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex"
 
+# The WebView shim is a single concatenated Java string literal; one missing
+# quote turns the whole script into a syntax error and evaluateJavascript()
+# then fails silently — every CSS fix and the sidebar brand vanish with no log
+# line. Gate the build on the same check the repo ships.
+if command -v node >/dev/null 2>&1; then
+  ( cd "$ROOT" && node tools/check-shim.cjs ) || { echo "shim syntax check failed" >&2; exit 1; }
+fi
+
 echo "[1/6] resources"
 "$BT/aapt2" compile --dir "$ROOT/app/res" -o "$OUT/res.zip"
 

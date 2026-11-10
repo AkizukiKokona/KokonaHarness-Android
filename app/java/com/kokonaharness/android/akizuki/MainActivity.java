@@ -161,23 +161,28 @@ public class MainActivity extends Activity {
             // other. `data-sidebar-opener` is the attribute the shell actually
             // emits for this control; if a build ever stops emitting it the mark
             // simply does not appear, which is the safe failure.
+            // ORDER IS THE FIX. Until 1.0.37 the stylesheet was appended FIRST
+            // and the brand URL set afterwards; 1.0.38 moved the 150 KB
+            // `--kn-brand` write above the appendChild, and from that release on
+            // NONE of this stylesheet reached the page — every white-bar fix
+            // silently did nothing while the sidebar mark vanished. A throw from
+            // setProperty() (a ~150 KB data URL, twice-encoded because brand.svg
+            // embedded a PNG) skipped the whole function body, so the <style>
+            // was never created.
+            //
+            // Now: create + append the stylesheet first, with the brand image
+            // inlined into the rule text instead of smuggled through a CSS
+            // variable, and no `return` that can be reached before the append.
             "window.__KOKONA_APPLY_BRAND__=function(){try{" +
-            // Write the variable once per page load: comparing a 150 KB data
-            // URL against getPropertyValue() never matches (the engine
-            // normalises it), which turned the guard into a write on every
-            // sync — and writing documentElement.style is a mutation the
-            // sidebar's observer watches.
-            "var rootEl=document.documentElement;" +
-            "var b=window.__KOKONA_BRAND_URL__;" +
-            "if(b&&!window.__KOKONA_BRAND_SET__){window.__KOKONA_BRAND_SET__=true;" +
-            "rootEl.style.setProperty('--kn-brand','url(\"'+b+'\")');}" +
             "if(document.getElementById('kn-sidebar-brand'))return;" +
+            "var b=window.__KOKONA_BRAND_URL__||'';" +
             "var styleEl=document.createElement('style');styleEl.id='kn-sidebar-brand';" +
-            "styleEl.textContent='[data-sidebar-opener]{width:auto!important;" +
+            "styleEl.textContent=(b?('[data-sidebar-opener]{width:auto!important;" +
             "height:30px!important;padding:0 4px!important;}'+" +
             "'[data-sidebar-opener] svg{display:none!important;}'+" +
-            "'[data-sidebar-opener]::after{content:\"\";display:block;" +
-            "width:88px;height:24px;background:var(--kn-brand,none) center/contain no-repeat;}'+" +
+            "'[data-sidebar-opener]::after{content:\"\";display:block;width:88px;" +
+            "height:24px;background-image:url(\"'+b+'\");background-position:center;" +
+            "background-size:contain;background-repeat:no-repeat;}'):'')+" +
             // Portrait: better-sidebar docks against the conversation column, which
             // is the full viewport on a phone; keep its panes inside the screen and
             // let the bottom workbench use the whole width under the IME.
@@ -241,7 +246,7 @@ public class MainActivity extends Activity {
             "'[data-dsh-market-root] [class*=\"_cats\"],'+" +
             "'[data-dsh-market-root] [class*=\"_stickyHead\"],'+" +
             "'[data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
-            "'[data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
+            "'[data-dsh-market-plugins-tab] [class*=\"_cats\"]{" +
             "background:transparent!important;background-image:none!important;}'+" +
             // The settings panel already paints its own translucent layer:
             // `.VOzbGW_panel::before{position:absolute;inset:0;
@@ -262,7 +267,11 @@ public class MainActivity extends Activity {
             // feature; on Android it only ever produces a red error message.
             // Its CSS-module class is stable, so hide the whole action container.
             "'.me01iq_action{display:none!important;}';" +
-            "(document.head||document.documentElement).appendChild(styleEl);" +
+            // A document that has not produced <head> or <html> yet (the
+            // onPageStarted injection) must not throw: the next sync retries,
+            // because the id lookup still misses.
+            "var host=document.head||document.documentElement||document.body;" +
+            "if(host)host.appendChild(styleEl);" +
             // The brand variable is written once, above, before the early
             // return: re-writing it here would touch documentElement.style on
             // every sync, which is itself a mutation the sidebar's observer
@@ -368,7 +377,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.41";
+    private static final String APP_VERSION = "1.0.42";
 
     private EngineService.Listener engineListener;
 
