@@ -212,22 +212,22 @@ public class MainActivity extends Activity {
             // parse color-mix(): it still paints the correct theme colour, just
             // without the transparency. The `body[data-ds-dark-theme]` block at
             // the end pins dark translucency explicitly for those builds.
-            // The CSS-module suffixes (_stickyHead, _head, VOzbGW_panel) stay
-            // stable across upstream builds.
-            // The market page paints THREE separate opaque bars with
-            // `var(--dsw-alias-bg-base,#fff)`: `_stickyHead` (the scroll
-            // container's sticky wrapper), `_head` (the title/actions row) and
-            // `_cats` (the sticky category filter row directly below it). The
-            // first pass covered the first two only, so the category row stayed
-            // a solid slab floating on the translucent panel — which is exactly
-            // what "one white block surrounded by transparency" looked like.
-            // All three, plus their ::before overhang, are covered here.
+            // The CSS-module suffixes (_stickyHead, _head, _pageBar) stay stable
+            // across upstream builds.
             "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
-            "'[class*=\"_pageBar\"]::before,'+" +
-            "'[data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
-            "'[data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
+            "'[data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
             "background:var(--dsw-alias-bg-base,#fff)!important;" +
             "background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 72%,transparent)!important;}'+" +
+            // The BUILT-IN plugin manager (dsh-client-ui-plugin-manager, the
+            // "插件" section of the settings dialog) has its own opaque header
+            // veil: `.pageBar[data-natural]:before` paints a full-width
+            // `var(--dsw-alias-bg-base)` overlay above the tab row, so the page
+            // showed one solid white band floating on the translucent panel.
+            // Matching the panel exactly — same token, same 82% — is what makes
+            // the band disappear instead of merely looking "a bit lighter".
+            "'[class*=\"_pageBar\"]::before,[class*=\"_pageBar\"]::after{'+" +
+            "background:var(--dsw-alias-bg-layer-2,#fff)!important;" +
+            "background:color-mix(in srgb,var(--dsw-alias-bg-layer-2,#fff) 82%,transparent)!important;}'+" +
             // Settings dialog: translucent chrome everywhere, like the main
             // page (the upstream panel is fully opaque).
             "'.VOzbGW_panel{background:var(--dsw-alias-bg-layer-2,#fff)!important;" +
@@ -236,10 +236,12 @@ public class MainActivity extends Activity {
             // the translucent chrome explicit rather than inherited from a token
             // that an older WebView may not resolve.
             "'body[data-ds-dark-theme] .VOzbGW_panel{background:rgba(26,26,29,.82)!important;}'+" +
+            "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::before,'+" +
+            "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::after{'+" +
+            "background:rgba(26,26,29,.82)!important;}'+" +
             "'body[data-ds-dark-theme] [class*=\"_stickyHead\"],'+" +
             "'body[data-ds-dark-theme] [class*=\"_stickyHead\"]::before,'+" +
-            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
-            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
+            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
             "background:rgba(26,26,29,.72)!important;}'+" +
             // dshmarket hides the settings <nav> on narrow screens with
             // [role=dialog]:has([data-dsh-market-root])>nav{display:none};
