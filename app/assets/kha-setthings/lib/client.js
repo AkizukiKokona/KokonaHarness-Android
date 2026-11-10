@@ -1,12 +1,12 @@
 /**
- * KHA-Setthings — the single KHA-owned tab in the official settings dialog.
+ * kha-setthings — the single KHA-owned tab in the official settings dialog.
  *
  * Registers exactly one `settings.section` (all of our old custom sections are
  * folded into it, stacked top-to-bottom) and one small `settings.action` in the
  * header's top-right corner. No file of the official settings UI is patched.
  */
 window.__ModuleLoader__.load({
-  id: 'KHA-Setthings',
+  id: 'kha-setthings',
   factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports
@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
     const react = require('react')
     const h = react.createElement
 
-    const ID = '[KHA-Setthings]'
+    const ID = '[kha-setthings]'
     const bridge = () => {
       try {
         return typeof KokonaBridge !== 'undefined' ? KokonaBridge : null
@@ -152,11 +152,11 @@ window.__ModuleLoader__.load({
 
     function AboutBlock() {
       const b = bridge()
-      let version = '1.0.36'
+      let version = '1.0.37'
       try { if (b !== null && typeof b.version === 'function') version = b.version() } catch (error) { /* keep fallback */ }
       return h('div', { className: 'khaSet_block' },
         h('div', { className: 'khaSet_title' }, '关于 KHA'),
-        h('div', { className: 'khaSet_desc' }, 'KHA ' + version + ' · 本页由 KHA-Setthings 插件提供，不影响官方设置布局。'),
+        h('div', { className: 'khaSet_desc' }, 'KHA ' + version + ' · 本页由 kha-setthings 插件提供，不影响官方设置布局。'),
         h('div', { className: 'khaSet_state' }, '工具链直接跑在 Android bionic 上；以 glibc 链接的程序由 kokona-grun 按需接住。终端入口在本页右上角。')
       )
     }

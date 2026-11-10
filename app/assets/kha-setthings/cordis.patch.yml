@@ -1,0 +1,6 @@
+# kha-setthings bundle patch: inserts this plugin into the profile layer stack.
+# Without a `dsh.bundle` declaration pointing here, the plugin manager refuses
+# to manage the package ("这个包没有声明组合包").
+- insert:
+    - id: kha-setthings
+      name: 'kha-setthings'

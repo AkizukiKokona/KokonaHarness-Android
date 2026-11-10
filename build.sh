@@ -61,7 +61,7 @@ echo "[4/6] dex"
 echo "[5/6] package"
 cp "$OUT/base.apk" "$OUT/app.apk"
 (cd "$OUT/dex" && zip -q -X "$OUT/app.apk" classes.dex)
-(cd "$ROOT/app" && zip -q -X "$OUT/app.apk" assets/runtime.size assets/runtime.bytes assets/seed/cordis.patch.yml assets/seed/node-addon-require-builtin-android.js assets/brand.svg assets/kokona-bg.jpg assets/kha-node-patch.cjs assets/official-settings-client.js assets/KHA-Setthings/package.json assets/KHA-Setthings/lib/index.js assets/KHA-Setthings/lib/client.js)
+(cd "$ROOT/app" && zip -q -X "$OUT/app.apk" assets/runtime.size assets/runtime.bytes assets/seed/cordis.patch.yml assets/seed/node-addon-require-builtin-android.js assets/brand.svg assets/kokona-bg.jpg assets/kha-node-patch.cjs assets/official-settings-client.js assets/kha-setthings/package.json assets/kha-setthings/cordis.patch.yml assets/kha-setthings/lib/index.js assets/kha-setthings/lib/client.js)
 (cd "$ROOT/app" && zip -0 -q -X "$OUT/app.apk" assets/runtime.tar.xz)
 
 echo "[6/6] align + sign"

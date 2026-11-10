@@ -66,9 +66,9 @@ public class EngineService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final String ACTION_STOP = "com.kokonaharness.android.akizuki.STOP";
     private static final String SIDEBAR_BUNDLE = "dsh-better-sidebar";
-    private static final String SETTHINGS_BUNDLE = "KHA-Setthings";
+    private static final String SETTHINGS_BUNDLE = "kha-setthings";
     private static final String[] SETTHINGS_ASSETS = {
-            "package.json", "lib/index.js", "lib/client.js"
+            "package.json", "cordis.patch.yml", "lib/index.js", "lib/client.js"
     };
     private static final Pattern URL_PATTERN =
             Pattern.compile("http://127\\.0\\.0\\.1:\\d+/?\\?token=[A-Za-z0-9_-]+");
@@ -306,10 +306,10 @@ public class EngineService extends Service {
             + "  \"dependencies\": { \"dshmarket\": \"1.73.10\","
             + " \"dsh-thinking-slider\": \"0.3.4\","
             + " \"dsh-better-sidebar\": \"0.30.1\","
-            + " \"KHA-Setthings\": \"1.0.0\" },\n"
+            + " \"kha-setthings\": \"1.0.0\" },\n"
             + "  \"dsh\": { \"profile\": { \"bundles\": [\"@deepseek-ai/dsh-base\","
             + " \"@deepseek-ai/dsh-web-app\", \"dshmarket\","
-            + " \"dsh-thinking-slider\", \"dsh-better-sidebar\", \"KHA-Setthings\"] } }\n}\n";
+            + " \"dsh-thinking-slider\", \"dsh-better-sidebar\", \"kha-setthings\"] } }\n}\n";
 
     private static final String PROFILE_PNPM_WORKSPACE =
             "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n";
@@ -551,7 +551,14 @@ public class EngineService extends Service {
      * snapshot. A byte comparison keeps this idempotent.
      */
     private void installSetthingsBundle() {
-        File dir = new File(RuntimeInstaller.runtimeDir(this),
+        File runtime = RuntimeInstaller.runtimeDir(this);
+        // Old builds shipped a capitalised package with no bundle declaration.
+        // Leaving it under node_modules makes the plugin manager keep reporting
+        // "这个包没有声明组合包" for that stale entry, so remove it once.
+        File legacy = new File(runtime, "lib/node_modules/KHA-Setthings");
+        if (legacy.isDirectory()) deleteTree(legacy);
+
+        File dir = new File(runtime,
                 "lib/node_modules/" + SETTHINGS_BUNDLE);
         try {
             if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) return;
@@ -565,7 +572,7 @@ public class EngineService extends Service {
                 java.nio.file.Files.write(target.toPath(), source);
             }
         } catch (Exception error) {
-            Log.w(TAG, "KHA-Setthings bundle install failed", error);
+            Log.w(TAG, "kha-setthings bundle install failed", error);
         }
     }
 
@@ -577,8 +584,8 @@ public class EngineService extends Service {
     private void ensureSetthingsOnce(File profile, File manifest) {
         android.content.SharedPreferences prefs =
                 getSharedPreferences("kha", MODE_PRIVATE);
-        if (prefs.getBoolean("setthings_v1", false)) return;
-        prefs.edit().putBoolean("setthings_v1", true).apply();
+        if (prefs.getBoolean("setthings_v2", false)) return;
+        prefs.edit().putBoolean("setthings_v2", true).apply();
         if (!manifest.isFile()) return;
         try {
             String raw = new String(java.nio.file.Files.readAllBytes(manifest.toPath()),
@@ -611,8 +618,12 @@ public class EngineService extends Service {
             writeText(manifest, root.toString(2) + "\n");
             Log.i(TAG, "registered " + SETTHINGS_BUNDLE + " bundle");
         } catch (Exception error) {
-            Log.w(TAG, "cannot register KHA-Setthings bundle", error);
+            Log.w(TAG, "cannot register kha-setthings bundle", error);
         }
+        // The old capitalised symlink in the profile would otherwise point at
+        // nothing (or at the stale package) and show up as a broken plugin.
+        File legacyLink = new File(new File(profile, "node_modules"), "KHA-Setthings");
+        if (legacyLink.exists()) legacyLink.delete();
         ensurePackageLink(profile, SETTHINGS_BUNDLE);
     }
 

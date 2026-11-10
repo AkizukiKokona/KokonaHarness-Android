@@ -195,6 +195,23 @@ public class MainActivity extends Activity {
             "'[role=\"dialog\"] *,[aria-modal=\"true\"] *{writing-mode:horizontal-tb!important;}'+" +
             "'[role=\"dialog\"] [class*=\"Label\"],[aria-modal=\"true\"] [class*=\"Label\"]{white-space:nowrap!important;}'+" +
             "'[role=\"dialog\"] [class*=\"navCell\"],[aria-modal=\"true\"] [class*=\"navCell\"]{min-width:96px!important;}'+" +
+            // Plugin manager / market pages paint their sticky top bars with an
+            // opaque `var(--dsw-alias-bg-base,#fff)`, which shows up as a solid
+            // white block. Give those bars the same translucent chrome as the
+            // surrounding UI. The CSS-module suffixes stay stable across builds.
+            "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
+            "'[class*=\"_pageBar\"]::before,'+" +
+            "'[data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
+            "'background:rgba(255,255,255,.72)!important;}'+" +
+            // Settings dialog: translucent chrome everywhere, like the main
+            // page (the upstream panel is fully opaque).
+            "'.VOzbGW_panel{background:rgba(255,255,255,.82)!important;}'+" +
+            // dshmarket hides the settings <nav> on narrow screens with
+            // [role=dialog]:has([data-dsh-market-root])>nav{display:none};
+            // while its root is still in the DOM the section tabs stay gone
+            // until the dialog is closed and reopened. Keep them available.
+            "'[role=\"dialog\"]>nav,[aria-modal=\"true\"]>nav{display:flex!important;'+" +
+            "'visibility:visible!important;}'+" +
             // The upstream "open settings document" action is a desktop Host
             // feature; on Android it only ever produces a red error message.
             // Its CSS-module class is stable, so hide the whole action container.
@@ -299,7 +316,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.36";
+    private static final String APP_VERSION = "1.0.37";
 
     private EngineService.Listener engineListener;
 
@@ -482,7 +499,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         // The terminal sheet is a native overlay on top of the WebView. Its
-        // launcher lives in the settings header: the KHA-Setthings bundle
+        // launcher lives in the settings header: the kha-setthings bundle
         // registers it through the official settings.action slot, so no native
         // floating button is needed and the header layout stays upstream.
         terminalOverlay = new TerminalOverlay(this, root);
