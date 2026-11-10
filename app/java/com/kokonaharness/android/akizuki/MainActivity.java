@@ -151,57 +151,33 @@ public class MainActivity extends Activity {
             "var raf=window.requestAnimationFrame||function(f){return setTimeout(f,50);};" +
             "var queued=false;var syncSoon=function(){if(queued)return;queued=true;" +
             "raf(function(){queued=false;syncSb();});};" +
-            // Anchor the brand on whatever the collapsed shell renders as its
-            // leading button. It used to key off `[data-sidebar-opener]` alone,
-            // which is not the element every screen renders: when the shell
-            // draws a plain [data-sidebar-toggle] instead, none of the rules
-            // matched and the stock glyph came back. So mark the anchor in JS
-            // (opener first, otherwise the collapsed toggle outside any dialog)
-            // and let the CSS follow the mark. `data-kn-brand` gates the whole
-            // block on the brand image actually being available, so a missing
-            // asset can never leave an empty button behind.
-            "var markBrand=function(){try{var el=document.querySelector('[data-sidebar-opener]');" +
-            "if(!el&&!sbOpen()){var ts=document.querySelectorAll('[data-sidebar-toggle]');" +
-            "for(var i=0;i<ts.length;i++){if(!ts[i].closest('[role=\"dialog\"],[aria-modal=\"true\"]')){el=ts[i];break;}}}" +
-            "var cur=document.querySelectorAll('[data-kn-brand-anchor]');" +
-            "for(var j=0;j<cur.length;j++){if(cur[j]!==el)cur[j].removeAttribute('data-kn-brand-anchor');}" +
-            "if(el&&el.getAttribute('data-kn-brand-anchor')!=='1')el.setAttribute('data-kn-brand-anchor','1');" +
-            "}catch(e){}};" +
+            // Brand mark on the collapsed-sidebar leading button.
+            //
+            // This is deliberately the 1.0.37 behaviour, restored verbatim: one
+            // selector, no JS anchoring, no state gating. Two later attempts
+            // made it worse — `data-kn-brand` gating could hide the mark
+            // entirely, and a `[data-sidebar-toggle]` fallback collided with the
+            // "open bottom panel" button so two controls painted on top of each
+            // other. `data-sidebar-opener` is the attribute the shell actually
+            // emits for this control; if a build ever stops emitting it the mark
+            // simply does not appear, which is the safe failure.
             "window.__KOKONA_APPLY_BRAND__=function(){try{" +
-            "markBrand();" +
+            // Write the variable once per page load: comparing a 150 KB data
+            // URL against getPropertyValue() never matches (the engine
+            // normalises it), which turned the guard into a write on every
+            // sync — and writing documentElement.style is a mutation the
+            // sidebar's observer watches.
             "var rootEl=document.documentElement;" +
-            // Write the variable exactly once per page load. Comparing a
-            // 150 KB `url("data:image/svg+xml;base64,…")` value against
-            // getPropertyValue() on every sync can never match once the engine
-            // normalises the string, so the guard turned into an unconditional
-            // write — and writing documentElement.style is itself a mutation
-            // the sidebar's observer watches. A boolean latch removes both the
-            // churn and the risk of a feedback loop.
             "var b=window.__KOKONA_BRAND_URL__;" +
             "if(b&&!window.__KOKONA_BRAND_SET__){window.__KOKONA_BRAND_SET__=true;" +
-            "rootEl.style.setProperty('--kn-brand','url(\"'+b+'\")');" +
-            "setAttr(rootEl,'data-kn-brand','1');}" +
+            "rootEl.style.setProperty('--kn-brand','url(\"'+b+'\")');}" +
             "if(document.getElementById('kn-sidebar-brand'))return;" +
             "var styleEl=document.createElement('style');styleEl.id='kn-sidebar-brand';" +
-            // Three anchors in every rule: the opener, the JS-marked anchor, and
-            // — only while the shell says the sidebar is collapsed — a plain
-            // toggle. The last one is the safety net: if both attributes are
-            // missing on some screen the brand still lands on the leading
-            // button, while the expanded layout (data-kn-sb="open", or no
-            // attribute yet) keeps its own control untouched.
-            "styleEl.textContent='html[data-kn-brand=\"1\"] [data-sidebar-opener],'+" +
-            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor],'+" +
-            "'html[data-kn-brand=\"1\"][data-kn-sb=\"closed\"] [data-sidebar-toggle]{" +
-            "width:auto!important;height:30px!important;padding:0 4px!important;}'+" +
-            "'html[data-kn-brand=\"1\"] [data-sidebar-opener] svg,'+" +
-            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor] svg,'+" +
-            "'html[data-kn-brand=\"1\"][data-kn-sb=\"closed\"] [data-sidebar-toggle] svg{" +
-            "display:none!important;}'+" +
-            "'html[data-kn-brand=\"1\"] [data-sidebar-opener]::after,'+" +
-            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor]::after,'+" +
-            "'html[data-kn-brand=\"1\"][data-kn-sb=\"closed\"] [data-sidebar-toggle]::after{" +
-            "content:\"\";display:block;width:88px;height:24px;" +
-            "background:var(--kn-brand,none) center/contain no-repeat;}'+" +
+            "styleEl.textContent='[data-sidebar-opener]{width:auto!important;" +
+            "height:30px!important;padding:0 4px!important;}'+" +
+            "'[data-sidebar-opener] svg{display:none!important;}'+" +
+            "'[data-sidebar-opener]::after{content:\"\";display:block;" +
+            "width:88px;height:24px;background:var(--kn-brand,none) center/contain no-repeat;}'+" +
             // Portrait: better-sidebar docks against the conversation column, which
             // is the full viewport on a phone; keep its panes inside the screen and
             // let the bottom workbench use the whole width under the IME.
@@ -251,6 +227,14 @@ public class MainActivity extends Activity {
             // older WebView silently drops the declaration.)
             "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
             "'[class*=\"_pageBar\"]::before,'+" +
+            // dshmarket's own root carries `data-dsh-market-root` in BOTH
+            // surfaces; `data-dsh-market-plugins-tab` only exists when the
+            // market is rendered as the standalone plugin page. Keying the
+            // rules off the latter left every bar opaque inside the settings
+            // dialog, which is exactly where they were reported.
+            "'[data-dsh-market-root] [class*=\"_head\"],'+" +
+            "'[data-dsh-market-root] [class*=\"_cats\"],'+" +
+            "'[data-dsh-market-root] [class*=\"_stickyHead\"],'+" +
             "'[data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
             "'[data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
             "background:transparent!important;background-image:none!important;}'+" +
@@ -379,7 +363,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.40";
+    private static final String APP_VERSION = "1.0.41";
 
     private EngineService.Listener engineListener;
 
