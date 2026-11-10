@@ -151,25 +151,41 @@ public class MainActivity extends Activity {
             "var raf=window.requestAnimationFrame||function(f){return setTimeout(f,50);};" +
             "var queued=false;var syncSoon=function(){if(queued)return;queued=true;" +
             "raf(function(){queued=false;syncSb();});};" +
+            // Anchor the brand on whatever the collapsed shell renders as its
+            // leading button. It used to key off `[data-sidebar-opener]` alone,
+            // which is not the element every screen renders: when the shell
+            // draws a plain [data-sidebar-toggle] instead, none of the rules
+            // matched and the stock glyph came back. So mark the anchor in JS
+            // (opener first, otherwise the collapsed toggle outside any dialog)
+            // and let the CSS follow the mark. `data-kn-brand` gates the whole
+            // block on the brand image actually being available, so a missing
+            // asset can never leave an empty button behind.
+            "var markBrand=function(){try{var el=document.querySelector('[data-sidebar-opener]');" +
+            "if(!el&&!sbOpen()){var ts=document.querySelectorAll('[data-sidebar-toggle]');" +
+            "for(var i=0;i<ts.length;i++){if(!ts[i].closest('[role=\"dialog\"],[aria-modal=\"true\"]')){el=ts[i];break;}}}" +
+            "var cur=document.querySelectorAll('[data-kn-brand-anchor]');" +
+            "for(var j=0;j<cur.length;j++){if(cur[j]!==el)cur[j].removeAttribute('data-kn-brand-anchor');}" +
+            "if(el&&el.getAttribute('data-kn-brand-anchor')!=='1')el.setAttribute('data-kn-brand-anchor','1');" +
+            "}catch(e){}};" +
             "window.__KOKONA_APPLY_BRAND__=function(){try{" +
+            "markBrand();" +
+            "var rootEl=document.documentElement;" +
+            "var b=window.__KOKONA_BRAND_URL__;" +
+            "if(b){var want='url(\"'+b+'\")';" +
+            "if(rootEl.style.getPropertyValue('--kn-brand')!==want)rootEl.style.setProperty('--kn-brand',want);" +
+            "setAttr(rootEl,'data-kn-brand','1');}" +
             "if(document.getElementById('kn-sidebar-brand'))return;" +
             "var styleEl=document.createElement('style');styleEl.id='kn-sidebar-brand';" +
-            // The opener element only exists in the collapsed/drawer layout; the
-            // expanded sidebar renders [data-sidebar-toggle] instead. Key the
-            // brand off that element so the expanded layout is untouched.
-            //
-            // These rules used to be gated on `html:not([data-kn-modal="1"])`,
-            // which tried to hand the shell its own glyph back while a dialog
-            // was open. The modal flag is inferred from any visible
-            // [role=dialog], so switching screens (a dialog that is still
-            // mounted but off-screen, a toast layer, the settings overlay)
-            // flipped the flag and the brand silently reverted to the stock
-            // icon. The mark is now unconditional: it survives navigation and
-            // stays put while an overlay owns the screen.
-            "styleEl.textContent='[data-sidebar-opener]{width:auto!important;" +
+            // Same two anchors in all three rules: the opener itself and the
+            // JS-marked anchor. The expanded sidebar keeps its own collapse
+            // button untouched — markBrand only ever marks the collapsed one.
+            "styleEl.textContent='html[data-kn-brand=\"1\"] [data-sidebar-opener],'+" +
+            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor]{width:auto!important;" +
             "height:30px!important;padding:0 4px!important;}'+" +
-            "'[data-sidebar-opener] svg{display:none!important;}'+" +
-            "'[data-sidebar-opener]::after{content:\"\";display:block;" +
+            "'html[data-kn-brand=\"1\"] [data-sidebar-opener] svg,'+" +
+            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor] svg{display:none!important;}'+" +
+            "'html[data-kn-brand=\"1\"] [data-sidebar-opener]::after,'+" +
+            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor]::after{content:\"\";display:block;" +
             "width:88px;height:24px;background:var(--kn-brand,none) center/contain no-repeat;}'+" +
             // Portrait: better-sidebar docks against the conversation column, which
             // is the full viewport on a phone; keep its panes inside the screen and
@@ -201,48 +217,40 @@ public class MainActivity extends Activity {
             "'[role=\"dialog\"] *,[aria-modal=\"true\"] *{writing-mode:horizontal-tb!important;}'+" +
             "'[role=\"dialog\"] [class*=\"Label\"],[aria-modal=\"true\"] [class*=\"Label\"]{white-space:nowrap!important;}'+" +
             "'[role=\"dialog\"] [class*=\"navCell\"],[aria-modal=\"true\"] [class*=\"navCell\"]{min-width:96px!important;}'+" +
-            // Plugin manager / market pages paint their sticky top bars with an
-            // opaque `var(--dsw-alias-bg-base,#fff)`, which reads as a solid
-            // block. Give those bars the same translucent chrome as the
-            // surrounding UI — but derive the colour from the live theme token
-            // instead of hard-coding white. The old `rgba(255,255,255,…)` was the
-            // light theme only: with the dark theme active every one of these
-            // bars (and the settings panel below) came back as a white slab.
-            // The first declaration is the fallback for a WebView that cannot
-            // parse color-mix(): it still paints the correct theme colour, just
-            // without the transparency. The `body[data-ds-dark-theme]` block at
-            // the end pins dark translucency explicitly for those builds.
-            // The CSS-module suffixes (_stickyHead, _head, _pageBar) stay stable
-            // across upstream builds.
+            // Every "chrome" bar above a scrolling list paints itself with an
+            // opaque token so content cannot show through while sticky:
+            //   * the built-in plugin manager uses `.pageBar[data-natural]:before`
+            //     (the white band above 插件管理 / 插件市场);
+            //   * dshmarket uses `_stickyHead`, `_head` and `_cats`.
+            // Painting them a slightly-translucent white still read as a slab,
+            // because the settings panel behind them is 82% — two different
+            // opacities side by side is exactly what made the edge visible.
+            // One shared rule, the same token and the same 82% as the panel,
+            // is what makes them disappear into it. The token-only declaration
+            // first is the fallback for a WebView without color-mix().
+            // The CSS-module suffixes (_stickyHead, _head, _cats, _pageBar,
+            // VOzbGW_panel) stay stable across upstream builds.
             "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
-            "'[data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
-            "background:var(--dsw-alias-bg-base,#fff)!important;" +
-            "background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 72%,transparent)!important;}'+" +
-            // The BUILT-IN plugin manager (dsh-client-ui-plugin-manager, the
-            // "插件" section of the settings dialog) has its own opaque header
-            // veil: `.pageBar[data-natural]:before` paints a full-width
-            // `var(--dsw-alias-bg-base)` overlay above the tab row, so the page
-            // showed one solid white band floating on the translucent panel.
-            // Matching the panel exactly — same token, same 82% — is what makes
-            // the band disappear instead of merely looking "a bit lighter".
-            "'[class*=\"_pageBar\"]::before,[class*=\"_pageBar\"]::after{'+" +
+            "'[class*=\"_pageBar\"]::before,[class*=\"_pageBar\"]::after,'+" +
+            "'[data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
+            "'[data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
             "background:var(--dsw-alias-bg-layer-2,#fff)!important;" +
             "background:color-mix(in srgb,var(--dsw-alias-bg-layer-2,#fff) 82%,transparent)!important;}'+" +
             // Settings dialog: translucent chrome everywhere, like the main
-            // page (the upstream panel is fully opaque).
+            // page (the upstream panel is fully opaque). Same 82%, same token.
             "'.VOzbGW_panel{background:var(--dsw-alias-bg-layer-2,#fff)!important;" +
             "background:color-mix(in srgb,var(--dsw-alias-bg-layer-2,#fff) 82%,transparent)!important;}'+" +
             // Dark theme: the dialog and the plugin page must stay dark, so make
             // the translucent chrome explicit rather than inherited from a token
             // that an older WebView may not resolve.
             "'body[data-ds-dark-theme] .VOzbGW_panel{background:rgba(26,26,29,.82)!important;}'+" +
-            "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::before,'+" +
-            "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::after{'+" +
-            "background:rgba(26,26,29,.82)!important;}'+" +
             "'body[data-ds-dark-theme] [class*=\"_stickyHead\"],'+" +
             "'body[data-ds-dark-theme] [class*=\"_stickyHead\"]::before,'+" +
-            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
-            "background:rgba(26,26,29,.72)!important;}'+" +
+            "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::before,'+" +
+            "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::after,'+" +
+            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
+            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
+            "background:rgba(26,26,29,.82)!important;}'+" +
             // dshmarket hides the settings <nav> on narrow screens with
             // [role=dialog]:has([data-dsh-market-root])>nav{display:none};
             // while its root is still in the DOM the section tabs stay gone
@@ -254,8 +262,10 @@ public class MainActivity extends Activity {
             // Its CSS-module class is stable, so hide the whole action container.
             "'.me01iq_action{display:none!important;}';" +
             "(document.head||document.documentElement).appendChild(styleEl);" +
-            "var b=window.__KOKONA_BRAND_URL__;" +
-            "if(b){document.documentElement.style.setProperty('--kn-brand','url(\"'+b+'\")');}" +
+            // The brand variable is written once, above, before the early
+            // return: re-writing it here would touch documentElement.style on
+            // every sync, which is itself a mutation the sidebar's observer
+            // watches.
             "}catch(e){}};window.__KOKONA_APPLY_BRAND__();" +
             // Edge swipe: left-to-right opens the drawer from the left third, right-to-left
             // closes it while open. Short, mostly horizontal swipes only.
