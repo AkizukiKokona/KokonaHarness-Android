@@ -21,7 +21,12 @@ import java.util.Locale;
  */
 public final class RuntimeInstaller {
     /** Bump when the bundled runtime changes. */
-    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r33";
+    // Bump the revision whenever the packaged snapshot changes shape, not only
+    // when the upstream dsh version moves. r33 shipped the snapshot with the
+    // pre-plugin settings UI inside it, so devices that installed it kept that
+    // tree and our later kha-setthings bundle ended up layered on top of the
+    // old files. r34 forces the one full re-extract that clears the overlap.
+    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r34";
 
     public interface Progress {
         void onProgress(float fraction, String message);

@@ -8,7 +8,7 @@
 
 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 是一个会读文件、跑脚本、调工具的 AI 引擎，过去主要待在电脑和服务器上。KokonaHarness 做的事很单纯：让这套引擎直接跑在 Android 手机上，界面沿用官方的 DSH Web UI，再把手机自己的屏幕、通知、剪贴板、截图这些能力，一项一项按你的授权交给它。
 
-> Android 8.1+ · arm64 · 当前 **1.0.37**（137）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r33**
+> Android 8.1+ · arm64 · 当前 **1.0.38** 修掉插件化之后的四个真机问题。其一，**客户端插件没声明 `inject`**：`ctx.slots` 属于受声明保护的服务，不导出 `exports.inject = ['slots']` 就会被上下文守卫直接拒绝，异常又被注册守卫吞掉，结果插件市场里能看到这个包、日志里却什么都没有，设置页也**始终不出现 KHA 选项卡**。补上声明后注册才真正落地。其二，**运行时版本没升导致新旧插件重叠**：r33 的快照里已经带着旧的设置页与旧插件目录，升级后只覆盖了少量文件，旧的 `KHA-Setthings` 与新的 `kha-setthings` 叠在一起。运行时版本提到 **r34**，强制一次全量重解压 + 原子替换，旧树整体换掉；启动时再对大写旧包名做四处清理（运行时目录、profile 软链、`package.json` 的 `dependencies` 与 `dsh.profile.bundles`、`cordis.patch.yml` 的 `insert` 行）。其三，`kha-setthings` 不再写进 `dependencies`：它是随运行时下发的自有包，没有 registry 条目，写个假版本号会让插件管理器一跑 `pnpm install` 就整盘解析失败，连带把其他插件卸掉；改由 `node_modules` 软链 + `bundles` 行挂载，并修好悬空软链不会被重建的问题。其四，**品牌标识固化**：原先的 `html:not([data-kn-modal="1"])` 条件会随任何可见的 `[role=dialog]` 翻转，切界面回来或弹出全屏提示时就退回官方图标；现改为无条件生效，并在每次侧栏同步时重新确认样式表存在。另外半透明不再是写死的白色：顶栏与设置面板改用 `color-mix()` 跟随主题令牌，并显式补 `body[data-ds-dark-theme]` 分支，**深色模式下不再出现白块**。版本号 1.0.38（versionCode 138，可覆盖安装）。
 
 ## 我们的路线：不用 PRoot，也不为兼容退回 PRoot
 
@@ -119,7 +119,7 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 
 **定位**：九项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
 
-已实施（1.0.37）：
+已实施（1.0.38）：
 
 1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
 2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点「允许」后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
@@ -202,7 +202,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 137 / versionName 1.0.37
+│   ├── AndroidManifest.xml        # versionCode 138 / versionName 1.0.38
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -241,12 +241,14 @@ KokonaHarness-Android/
 └── README.md
 ```
 
-设置页现已退回官方原版：`EngineService.restoreOfficialSettings()` 每次启动把 `assets/official-settings-client.js` 覆盖到已安装的 `KokonaRuntime`，不必重打 100 MB 快照；`runtime-patches/` 里的设置页补丁仅作历史存档、不再生效。我们的自有功能改由独立插件 **`kha-setthings`** 提供：启动时把 `assets/kha-setthings/` 的四个小文件解压到 `KokonaRuntime/lib/node_modules/kha-setthings/`，并一次性注册进 profile 的 `dsh.profile.bundles`。插件只注册一个 `settings.section`（运行模式 / 手机能力授权 / 关于，上下排列）和右上角的终端 `settings.action`，**完全不改官方设置布局**；桌面端专属的「打开配置文件」按钮由 WebView shim 一条 CSS 隐藏。其余 DSH UI 定制仍打在 `node_modules/@deepseek-ai/...` 的构建树上，清单见本文末「运行时定制」。
+设置页现已退回官方原版：`EngineService.restoreOfficialSettings()` 每次启动把 `assets/official-settings-client.js` 覆盖到已安装的 `KokonaRuntime`，不必重打 100 MB 快照；`runtime-patches/` 里的设置页补丁仅作历史存档、不再生效。我们的自有功能改由独立插件 **`kha-setthings`** 提供：启动时把 `assets/kha-setthings/` 的四个小文件解压到 `KokonaRuntime/lib/node_modules/kha-setthings/`，并在**每次启动**时与 profile 对账（缺了补上、重名去重、旧的大写包名一并清掉）。插件只注册一个 `settings.section`（运行模式 / 手机能力授权 / 关于，上下排列）和右上角的终端 `settings.action`，**完全不改官方设置布局**；桌面端专属的「打开配置文件」按钮由 WebView shim 一条 CSS 隐藏。其余 DSH UI 定制仍打在 `node_modules/@deepseek-ai/...` 的构建树上，清单见本文末「运行时定制」。
 
 ## 最近更新
 
 <details>
 <summary>展开开发记录</summary>
+
+**1.0.38** 修掉插件化之后的三个真机问题。其一，旧的 `KHA-Setthings`（大写）没有真正退场：它留在 `KokonaRuntime/lib/node_modules`、profile 的 `node_modules` 链接、`package.json` 的 `dependencies` 与 `dsh.profile.bundles`，以及 `cordis.patch.yml` 的 `insert` 行里，Host 于是跳过这个 bundle、插件列表却还挂着一个坏条目，**整个设置页看起来毫无变化**。现改为启动时四处全清 + 幂等对账（去掉一次性开关，之前那个开关在写清单之前就置位，失败一次就永久放弃）。其二，`kha-setthings` 不再写进 `dependencies`：它是随运行时一起下发的自有包，没有 registry 条目，写个假版本号会让插件管理器一跑 `pnpm install` 就整盘解析失败，连带把其他插件一起卸掉；改由 `node_modules` 软链 + `bundles` 行挂载，顺手修好悬空软链不会被重建的问题。其三，半透明不再是写死的白色：顶栏与设置面板改用 `color-mix()` 跟随主题令牌（不认识 `color-mix` 的 WebView 退化为同色不透明），并显式补 `body[data-ds-dark-theme]` 分支，**深色模式下设置面板与插件页顶栏不再出现白块**。另把设置节与右上角终端按钮拆成各自独立的注册守卫，任一槽位不可用都不影响另一个。版本号 1.0.38（versionCode 138，可覆盖安装）。
 
 **1.0.37** 设置页**退回官方原版**，不再打任何设置页补丁：竖屏文字强制横排、桌面端「打开配置文件」按钮隐藏，两处由 WebView shim 处理；原生终端覆盖界面（持久 bash、左滑 / 返回键退出、启动打印提示）保留。随后改为**插件化**：新增独立 bundle `kha-setthings`，注册唯一一个自有设置选项卡（运行模式、手机能力授权、关于，上下排列）并把终端按钮注册到官方 header 右上角的 `settings.action`，因此官方设置布局完全不受影响。侧栏收起时左上角品牌标识恢复：依据 `[data-sidebar-opener]` 元素本身判断，**展开态样式完全未改**。版本号 1.0.37（versionCode 137，保证可覆盖安装）。
 
@@ -283,7 +285,7 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.0.37**（versionCode 137）
+- App：**1.0.38**（versionCode 138）
 - DSH：**0.2.2-rc.1**
 - KokonaRuntime：**dsh-0.2.2-rc.1-r33**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`

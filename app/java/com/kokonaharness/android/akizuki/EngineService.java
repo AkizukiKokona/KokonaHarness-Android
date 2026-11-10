@@ -70,6 +70,16 @@ public class EngineService extends Service {
     private static final String[] SETTHINGS_ASSETS = {
             "package.json", "cordis.patch.yml", "lib/index.js", "lib/client.js"
     };
+    /**
+     * Names earlier builds shipped for the same settings bundle. The capitalised
+     * one reached devices as a real directory plus a profile link and a manifest
+     * row, so it has to be scrubbed from all three places, not just node_modules:
+     * a manifest row whose package is gone makes the Host skip the bundle, and
+     * the plugin list then shows a permanently broken entry.
+     */
+    private static final String[] LEGACY_SETTHINGS = {
+            "KHA-Setthings", "khakhakha-settings", "kha-settings"
+    };
     private static final Pattern URL_PATTERN =
             Pattern.compile("http://127\\.0\\.0\\.1:\\d+/?\\?token=[A-Za-z0-9_-]+");
 
@@ -301,12 +311,15 @@ public class EngineService extends Service {
         return patch;
     }
 
+    // `kha-setthings` is mounted through the profile's node_modules link and its
+    // `dsh.profile.bundles` row, never through `dependencies`: it ships inside the
+    // runtime snapshot and has no registry entry, so a versioned dependency here
+    // would make the next pnpm install abort the whole profile.
     private static final String PROFILE_PACKAGE_JSON =
             "{\n  \"name\": \"dsh-profile-kokona\",\n  \"private\": true,\n"
             + "  \"dependencies\": { \"dshmarket\": \"1.73.10\","
             + " \"dsh-thinking-slider\": \"0.3.4\","
-            + " \"dsh-better-sidebar\": \"0.30.1\","
-            + " \"kha-setthings\": \"1.0.0\" },\n"
+            + " \"dsh-better-sidebar\": \"0.30.1\" },\n"
             + "  \"dsh\": { \"profile\": { \"bundles\": [\"@deepseek-ai/dsh-base\","
             + " \"@deepseek-ai/dsh-web-app\", \"dshmarket\","
             + " \"dsh-thinking-slider\", \"dsh-better-sidebar\", \"kha-setthings\"] } }\n}\n";
@@ -432,7 +445,7 @@ public class EngineService extends Service {
         // during the safe-mode experiment. Runs once, then never again, so the
         // user's own install/uninstall decisions still stick.
         restoreSidebarOnce(profile, manifest);
-        ensureSetthingsOnce(profile, manifest);
+        syncSetthings(profile, manifest);
 
         File workspaceFile = new File(profile, "pnpm-workspace.yaml");
         if (!workspaceFile.exists()) writeText(workspaceFile, PROFILE_PNPM_WORKSPACE);
@@ -554,9 +567,10 @@ public class EngineService extends Service {
         File runtime = RuntimeInstaller.runtimeDir(this);
         // Old builds shipped a capitalised package with no bundle declaration.
         // Leaving it under node_modules makes the plugin manager keep reporting
-        // "这个包没有声明组合包" for that stale entry, so remove it once.
-        File legacy = new File(runtime, "lib/node_modules/KHA-Setthings");
-        if (legacy.isDirectory()) deleteTree(legacy);
+        // "这个包没有声明组合包" for that stale entry, so remove it every boot.
+        for (String legacy : LEGACY_SETTHINGS) {
+            removeTreeOrLink(new File(runtime, "lib/node_modules/" + legacy));
+        }
 
         File dir = new File(runtime,
                 "lib/node_modules/" + SETTHINGS_BUNDLE);
@@ -577,54 +591,194 @@ public class EngineService extends Service {
     }
 
     /**
-     * Register our first-party settings bundle exactly once. Using a one-shot
-     * marker means a later user uninstall is never resurrected, which is the
-     * same rule the rest of the profile follows.
+     * Keep the first-party settings bundle installed, and keep the legacy
+     * names out of the profile for good.
+     *
+     * This deliberately runs on every boot instead of once. The old one-shot
+     * marker was set BEFORE the manifest write, so a single failure (read-only
+     * profile, interrupted upgrade) retired the migration forever and left the
+     * settings tab missing; and because a stale row in `dsh.profile.bundles`
+     * makes the Host skip the bundle while the plugin list keeps advertising
+     * it, "the whole settings page did nothing" was the visible result. The
+     * scrub is idempotent and only writes when the parsed manifest actually
+     * changes, so re-running it costs nothing.
      */
-    private void ensureSetthingsOnce(File profile, File manifest) {
-        android.content.SharedPreferences prefs =
-                getSharedPreferences("kha", MODE_PRIVATE);
-        if (prefs.getBoolean("setthings_v2", false)) return;
-        prefs.edit().putBoolean("setthings_v2", true).apply();
-        if (!manifest.isFile()) return;
+    private void syncSetthings(File profile, File manifest) {
+        // Old capitalised directory / link must go before anything resolves
+        // `kha-setthings`, otherwise both names compete for the same row id.
+        for (String legacy : LEGACY_SETTHINGS) {
+            removeTreeOrLink(new File(new File(profile, "node_modules"), legacy));
+        }
+        pruneLegacyPatch(profile);
+        if (!manifest.isFile()) {
+            ensurePackageLink(profile, SETTHINGS_BUNDLE);
+            return;
+        }
         try {
             String raw = new String(java.nio.file.Files.readAllBytes(manifest.toPath()),
                     java.nio.charset.StandardCharsets.UTF_8);
             org.json.JSONObject root = new org.json.JSONObject(raw);
+            boolean changed = false;
+
+            // `kha-setthings` is a first-party package that ships inside the
+            // runtime snapshot; it is not on any registry. Listing it under
+            // dependencies therefore makes the next `pnpm install` (which the
+            // plugin manager runs on add/remove) fail to resolve the version and
+            // abort the whole profile, which uninstalls every other plugin with
+            // it. The node_modules link below is what the Host actually reads.
             org.json.JSONObject deps = root.optJSONObject("dependencies");
-            if (deps == null) {
-                deps = new org.json.JSONObject();
-                root.put("dependencies", deps);
+            if (deps != null) {
+                for (String legacy : LEGACY_SETTHINGS) {
+                    if (deps.has(legacy)) {
+                        deps.remove(legacy);
+                        changed = true;
+                    }
+                }
+                if (deps.has(SETTHINGS_BUNDLE)) {
+                    deps.remove(SETTHINGS_BUNDLE);
+                    changed = true;
+                }
+                if (deps.length() == 0) {
+                    root.remove("dependencies");
+                    changed = true;
+                } else {
+                    root.put("dependencies", deps);
+                }
             }
-            if (!deps.has(SETTHINGS_BUNDLE)) deps.put(SETTHINGS_BUNDLE, "1.0.0");
+
             org.json.JSONObject dsh = root.optJSONObject("dsh");
             if (dsh == null) {
                 dsh = new org.json.JSONObject();
                 root.put("dsh", dsh);
+                changed = true;
             }
             org.json.JSONObject dshProfile = dsh.optJSONObject("profile");
             if (dshProfile == null) {
                 dshProfile = new org.json.JSONObject();
                 dsh.put("profile", dshProfile);
+                changed = true;
             }
             org.json.JSONArray bundles = dshProfile.optJSONArray("bundles");
             if (bundles == null) bundles = new org.json.JSONArray();
+
+            org.json.JSONArray kept = new org.json.JSONArray();
             boolean present = false;
             for (int i = 0; i < bundles.length(); i++) {
-                if (SETTHINGS_BUNDLE.equals(bundles.optString(i))) present = true;
+                String name = bundles.optString(i);
+                if (isLegacySetthings(name)) {
+                    changed = true;
+                    continue;
+                }
+                // Drop an exact duplicate rather than mounting the row twice.
+                if (SETTHINGS_BUNDLE.equals(name)) {
+                    if (present) {
+                        changed = true;
+                        continue;
+                    }
+                    present = true;
+                }
+                kept.put(name);
             }
-            if (!present) bundles.put(SETTHINGS_BUNDLE);
-            dshProfile.put("bundles", bundles);
-            writeText(manifest, root.toString(2) + "\n");
-            Log.i(TAG, "registered " + SETTHINGS_BUNDLE + " bundle");
+            if (!present) {
+                kept.put(SETTHINGS_BUNDLE);
+                changed = true;
+            }
+            if (changed) {
+                dshProfile.put("bundles", kept);
+                writeText(manifest, root.toString(2) + "\n");
+                Log.i(TAG, "profile reconciled: legacy settings bundles removed, "
+                        + SETTHINGS_BUNDLE + " mounted");
+            }
         } catch (Exception error) {
-            Log.w(TAG, "cannot register kha-setthings bundle", error);
+            Log.w(TAG, "cannot reconcile kha-setthings bundle", error);
         }
-        // The old capitalised symlink in the profile would otherwise point at
-        // nothing (or at the stale package) and show up as a broken plugin.
-        File legacyLink = new File(new File(profile, "node_modules"), "KHA-Setthings");
-        if (legacyLink.exists()) legacyLink.delete();
         ensurePackageLink(profile, SETTHINGS_BUNDLE);
+    }
+
+    private static boolean isLegacySetthings(String name) {
+        for (String legacy : LEGACY_SETTHINGS) {
+            if (legacy.equals(name)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Drop rows that still mount one of the retired package names. A patch row
+     * pointing at a package that no longer exists fails the loader's import for
+     * that entry, which is reported as a broken plugin instead of being ignored.
+     */
+    private void pruneLegacyPatch(File profile) {
+        File patch = new File(profile, "cordis.patch.yml");
+        if (!patch.isFile()) return;
+        try {
+            String raw = new String(java.nio.file.Files.readAllBytes(patch.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            String[] lines = raw.split("\n", -1);
+            boolean dropped = false;
+            java.util.ArrayList<String> kept = new java.util.ArrayList<>();
+            for (String line : lines) {
+                String trimmed = line.trim();
+                boolean hit = false;
+                for (String legacy : LEGACY_SETTHINGS) {
+                    if (trimmed.equals("- id: " + legacy) || trimmed.equals("id: " + legacy)
+                            || trimmed.equals("- name: " + legacy)
+                            || trimmed.equals("name: " + legacy)
+                            || trimmed.equals("- name: '" + legacy + "'")
+                            || trimmed.equals("name: '" + legacy + "'")
+                            || trimmed.equals("- name: \"" + legacy + "\"")
+                            || trimmed.equals("name: \"" + legacy + "\"")) {
+                        hit = true;
+                        break;
+                    }
+                }
+                if (hit) {
+                    dropped = true;
+                    continue;
+                }
+                kept.add(line);
+            }
+            if (!dropped) return;
+            StringBuilder out = new StringBuilder();
+            for (int i = 0; i < kept.size(); i++) {
+                String line = kept.get(i);
+                // An `insert:` whose list just lost its only row would be an
+                // empty sequence, which the loader rejects.
+                if (line.trim().equals("- insert:") && !hasFollowingChild(kept, i)) continue;
+                out.append(line);
+                if (i < kept.size() - 1) out.append('\n');
+            }
+            writeText(patch, out.toString());
+            Log.i(TAG, "legacy settings patch rows removed");
+        } catch (Exception error) {
+            Log.w(TAG, "cannot prune legacy patch rows", error);
+        }
+    }
+
+    private static boolean hasFollowingChild(java.util.List<String> lines, int index) {
+        String parent = lines.get(index);
+        int parentIndent = parent.indexOf('-');
+        for (int i = index + 1; i < lines.size(); i++) {
+            String line = lines.get(i);
+            if (line.trim().isEmpty()) continue;
+            int indent = line.indexOf(line.trim());
+            if (indent <= parentIndent) return false;
+            return true;
+        }
+        return false;
+    }
+
+    /** Remove a directory, a plain file, or a symlink (dangling ones included). */
+    private static void removeTreeOrLink(File path) {
+        try {
+            if (java.nio.file.Files.isSymbolicLink(path.toPath())) {
+                java.nio.file.Files.deleteIfExists(path.toPath());
+                return;
+            }
+        } catch (Exception ignored) {
+            // Fall through to the recursive path below.
+        }
+        if (path.isDirectory()) deleteTree(path);
+        else if (path.exists()) path.delete();
     }
 
     /**
@@ -693,11 +847,24 @@ public class EngineService extends Service {
         try {
             File modules = new File(profile, "node_modules");
             File link = new File(modules, name);
-            if (link.exists()) return;
+            File target = new File(RuntimeInstaller.runtimeDir(this),
+                    "lib/node_modules/" + name);
+            // A dangling symlink reports exists() == false, which used to send
+            // the old code down the create path where it threw and was swallowed,
+            // leaving the bundle unresolvable forever.
+            if (java.nio.file.Files.isSymbolicLink(link.toPath())) {
+                try {
+                    if (java.nio.file.Files.readSymbolicLink(link.toPath())
+                            .equals(target.toPath())) return;
+                } catch (Exception ignored) {
+                    // Unreadable link: replace it below.
+                }
+                java.nio.file.Files.deleteIfExists(link.toPath());
+            } else if (link.exists()) {
+                return;
+            }
             if (!modules.isDirectory() && !modules.mkdirs()) return;
-            java.nio.file.Files.createSymbolicLink(link.toPath(),
-                    new File(RuntimeInstaller.runtimeDir(this),
-                            "lib/node_modules/" + name).toPath());
+            java.nio.file.Files.createSymbolicLink(link.toPath(), target.toPath());
         } catch (Exception ignored) {
             // Filesystem without symlink support: the bundle degrades to a listed
             // but inactive entry rather than blocking the engine.

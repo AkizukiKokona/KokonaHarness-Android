@@ -21,9 +21,22 @@ case "$(uname -s)" in
   *)                    CP_SEP=':' ;;
 esac
 
-BT="$SDK/build-tools/35.0.0"
-PLATFORM="$SDK/platforms/android-35/android.jar"
+BT="${ANDROID_BUILD_TOOLS:-$SDK/build-tools/35.0.0}"
+PLATFORM="${ANDROID_PLATFORM:-$SDK/platforms/android-35/android.jar}"
 OUT="$BUILD/apk"
+
+# Windows 的 build-tools 只发 .exe / .bat，而 MSYS 只会替 .exe 自动补后缀，
+# 所以 d8 与 apksigner 必须显式指向 .bat，否则报 "No such file or directory"。
+pick_tool() { if [ -f "$BT/$1" ]; then printf '%s' "$BT/$1"; else printf '%s' "$BT/$1.bat"; fi; }
+D8="$(pick_tool d8)"
+APKSIGNER="$(pick_tool apksigner)"
+
+# Git Bash 只带 zipinfo / zipgrep，没有 zip，打包步骤会直接失败。机器上装了
+# Python 时用 tools/zip.py 顶上，让构建不再依赖外部 zip 二进制。
+if ! command -v zip >/dev/null 2>&1; then
+  ZIP_PY="${PYTHON:-python}"
+  zip() { "$ZIP_PY" "$ROOT/tools/zip.py" "$@"; }
+fi
 
 [ -f "$PLATFORM" ] || { echo "missing $PLATFORM" >&2; exit 1; }
 [ -f "$ROOT/app/assets/runtime.tar.xz" ] || { echo "run build-runtime.sh first" >&2; exit 1; }
@@ -53,7 +66,7 @@ find "$ROOT/app/java" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
 
 echo "[4/6] dex"
 (cd "$OUT/classes" && "$JAVA_HOME/bin/jar" cf "$OUT/classes.jar" .)
-"$BT/d8" --release --min-api 28 --lib "$PLATFORM" \
+"$D8" --release --min-api 28 --lib "$PLATFORM" \
   --output "$OUT/dex" "$OUT/classes.jar" "$ROOT/app/libs/xz.jar" \
   "$SHIZUKU/api/classes.jar" "$SHIZUKU/aidl/classes.jar" \
   "$SHIZUKU/shared/classes.jar" "$SHIZUKU/provider/classes.jar"
@@ -72,9 +85,9 @@ if [ ! -f "$KEYSTORE" ]; then
     -storepass kokona -keypass kokona -keyalg RSA -keysize 2048 -validity 10000 \
     -dname "CN=KokonaHarness, OU=Kokona, O=Kokona, L=Tokyo, S=Tokyo, C=JP" >/dev/null 2>&1
 fi
-"$BT/apksigner" sign --ks "$KEYSTORE" --ks-pass pass:kokona --key-pass pass:kokona \
+"$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass pass:kokona --key-pass pass:kokona \
   --v1-signing-enabled true --v2-signing-enabled true \
   --out "$ROOT/KokonaHarness.apk" "$OUT/aligned.apk"
 
-"$BT/apksigner" verify "$ROOT/KokonaHarness.apk"
+"$APKSIGNER" verify "$ROOT/KokonaHarness.apk"
 ls -lh "$ROOT/KokonaHarness.apk"

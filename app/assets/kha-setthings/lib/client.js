@@ -152,7 +152,7 @@ window.__ModuleLoader__.load({
 
     function AboutBlock() {
       const b = bridge()
-      let version = '1.0.37'
+      let version = '1.0.38'
       try { if (b !== null && typeof b.version === 'function') version = b.version() } catch (error) { /* keep fallback */ }
       return h('div', { className: 'khaSet_block' },
         h('div', { className: 'khaSet_title' }, '关于 KHA'),
@@ -186,6 +186,9 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      // Each slot is registered behind its own guard: an unknown or unavailable
+      // slot must never take the settings tab down with it. The terminal action
+      // is a convenience, the section is the point.
       try {
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
@@ -193,6 +196,10 @@ window.__ModuleLoader__.load({
           order: 50,
           label: () => 'KHA 设置'
         }, KhaSetthingsSection))
+      } catch (error) {
+        console.warn(ID, 'settings.section registration failed', error)
+      }
+      try {
         ctx.slots.inject('settings.action', () => ctx.slots.register({
           name: 'settings.action',
           id: 'kha-terminal',
@@ -200,10 +207,16 @@ window.__ModuleLoader__.load({
           inject: () => ({})
         }, KhaTerminalButton))
       } catch (error) {
-        console.warn(ID, 'apply failed', error)
+        // No header action slot in this build: the section still works.
+        console.warn(ID, 'settings.action registration failed', error)
       }
     }
 
+    // A client plugin only receives the services it declares here. Without
+    // `slots` the guarded context rejects `ctx.slots` outright, the throw is
+    // swallowed by the registration guards below, and the tab simply never
+    // appears — with nothing in the log to explain why.
+    exports.inject = ['slots']
     exports.apply = apply
     return module.exports
   }

@@ -155,15 +155,21 @@ public class MainActivity extends Activity {
             "if(document.getElementById('kn-sidebar-brand'))return;" +
             "var styleEl=document.createElement('style');styleEl.id='kn-sidebar-brand';" +
             // The opener element only exists in the collapsed/drawer layout; the
-            // expanded sidebar renders [data-sidebar-toggle] instead. Keying the
-            // brand off that element (rather than the JS-computed data-kn-sb
-            // flag) keeps it visible when the flag is wrong and leaves the
-            // expanded layout completely untouched. :not() also matches before
-            // the observer has written the attribute for the first time.
-            "styleEl.textContent='html:not([data-kn-modal=\"1\"]) [data-sidebar-opener]{width:auto!important;" +
+            // expanded sidebar renders [data-sidebar-toggle] instead. Key the
+            // brand off that element so the expanded layout is untouched.
+            //
+            // These rules used to be gated on `html:not([data-kn-modal="1"])`,
+            // which tried to hand the shell its own glyph back while a dialog
+            // was open. The modal flag is inferred from any visible
+            // [role=dialog], so switching screens (a dialog that is still
+            // mounted but off-screen, a toast layer, the settings overlay)
+            // flipped the flag and the brand silently reverted to the stock
+            // icon. The mark is now unconditional: it survives navigation and
+            // stays put while an overlay owns the screen.
+            "styleEl.textContent='[data-sidebar-opener]{width:auto!important;" +
             "height:30px!important;padding:0 4px!important;}'+" +
-            "'html:not([data-kn-modal=\"1\"]) [data-sidebar-opener] svg{display:none!important;}'+" +
-            "'html:not([data-kn-modal=\"1\"]) [data-sidebar-opener]::after{content:\"\";display:block;" +
+            "'[data-sidebar-opener] svg{display:none!important;}'+" +
+            "'[data-sidebar-opener]::after{content:\"\";display:block;" +
             "width:88px;height:24px;background:var(--kn-brand,none) center/contain no-repeat;}'+" +
             // Portrait: better-sidebar docks against the conversation column, which
             // is the full viewport on a phone; keep its panes inside the screen and
@@ -196,16 +202,35 @@ public class MainActivity extends Activity {
             "'[role=\"dialog\"] [class*=\"Label\"],[aria-modal=\"true\"] [class*=\"Label\"]{white-space:nowrap!important;}'+" +
             "'[role=\"dialog\"] [class*=\"navCell\"],[aria-modal=\"true\"] [class*=\"navCell\"]{min-width:96px!important;}'+" +
             // Plugin manager / market pages paint their sticky top bars with an
-            // opaque `var(--dsw-alias-bg-base,#fff)`, which shows up as a solid
-            // white block. Give those bars the same translucent chrome as the
-            // surrounding UI. The CSS-module suffixes stay stable across builds.
+            // opaque `var(--dsw-alias-bg-base,#fff)`, which reads as a solid
+            // block. Give those bars the same translucent chrome as the
+            // surrounding UI — but derive the colour from the live theme token
+            // instead of hard-coding white. The old `rgba(255,255,255,…)` was the
+            // light theme only: with the dark theme active every one of these
+            // bars (and the settings panel below) came back as a white slab.
+            // The first declaration is the fallback for a WebView that cannot
+            // parse color-mix(): it still paints the correct theme colour, just
+            // without the transparency. The `body[data-ds-dark-theme]` block at
+            // the end pins dark translucency explicitly for those builds.
+            // The CSS-module suffixes (_stickyHead, _head, VOzbGW_panel) stay
+            // stable across upstream builds.
             "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
             "'[class*=\"_pageBar\"]::before,'+" +
             "'[data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
-            "'background:rgba(255,255,255,.72)!important;}'+" +
+            "background:var(--dsw-alias-bg-base,#fff)!important;" +
+            "background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 72%,transparent)!important;}'+" +
             // Settings dialog: translucent chrome everywhere, like the main
             // page (the upstream panel is fully opaque).
-            "'.VOzbGW_panel{background:rgba(255,255,255,.82)!important;}'+" +
+            "'.VOzbGW_panel{background:var(--dsw-alias-bg-layer-2,#fff)!important;" +
+            "background:color-mix(in srgb,var(--dsw-alias-bg-layer-2,#fff) 82%,transparent)!important;}'+" +
+            // Dark theme: the dialog and the plugin page must stay dark, so make
+            // the translucent chrome explicit rather than inherited from a token
+            // that an older WebView may not resolve.
+            "'body[data-ds-dark-theme] .VOzbGW_panel{background:rgba(26,26,29,.82)!important;}'+" +
+            "'body[data-ds-dark-theme] [class*=\"_stickyHead\"],'+" +
+            "'body[data-ds-dark-theme] [class*=\"_stickyHead\"]::before,'+" +
+            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
+            "background:rgba(26,26,29,.72)!important;}'+" +
             // dshmarket hides the settings <nav> on narrow screens with
             // [role=dialog]:has([data-dsh-market-root])>nav{display:none};
             // while its root is still in the DOM the section tabs stay gone
@@ -245,7 +270,11 @@ public class MainActivity extends Activity {
             "window.__KOKONA_SB_OBS__.observe(document.body,{subtree:true,childList:true," +
             "attributes:true,attributeFilter:['class','aria-modal','aria-expanded']});" +
             "}catch(e){}};" +
-            "window.__KOKONA_SYNC_SB__=function(){observeSb();syncSb();fitDock();};" +
+            // Re-assert the brand on every sync as well: the stylesheet is
+            // cheap to look up, and a page that swaps <head> or remounts the
+            // shell used to leave the mark gone until the next launch.
+            "window.__KOKONA_SYNC_SB__=function(){observeSb();syncSb();fitDock();" +
+            "window.__KOKONA_APPLY_BRAND__();};" +
             "window.__KOKONA_SYNC_SB__();setTimeout(window.__KOKONA_SYNC_SB__,600);" +
             // No permanent timer here. The observers above already fire on the
             // mutations that matter, and a 1.2s poll re-ran the dialog scan — and
@@ -316,7 +345,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.37";
+    private static final String APP_VERSION = "1.0.38";
 
     private EngineService.Listener engineListener;
 
