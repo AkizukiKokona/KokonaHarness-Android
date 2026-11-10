@@ -71,6 +71,23 @@ process.stdout.write(JSON.stringify({
 }));
 ' "$TAG" "$TITLE" "$NOTES" > "$TMP/payload.json"
 
+# Migrated repositories often have the Releases unit disabled, which makes
+# every /releases endpoint return 404. Enable it once if needed (admin only).
+echo "== ensuring the Releases unit is enabled =="
+api -o "$TMP/repo.json" "$API"
+RELEASES_ON="$("$NODE_BIN" -e '
+const fs=require("fs");const r=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+process.stdout.write(String(r.has_releases===true));' "$TMP/repo.json")"
+if [ "$RELEASES_ON" != "true" ]; then
+  EC="$(api -X PATCH -H 'Content-Type: application/json' \
+    -d '{"has_releases":true}' \
+    -o "$TMP/repo2.json" -w '%{http_code}' "$API")"
+  [ "$EC" = "200" ] || { echo "cannot enable Releases unit (HTTP $EC)" >&2; exit 1; }
+  echo "   Releases unit enabled (HTTP $EC)"
+else
+  echo "   already enabled"
+fi
+
 echo "== looking for an existing release for $TAG =="
 CODE="$(api -o "$TMP/existing.json" -w '%{http_code}' \
   "$API/releases/tags/$TAG" || true)"
