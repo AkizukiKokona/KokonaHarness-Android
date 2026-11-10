@@ -226,7 +226,12 @@ public class MainActivity extends Activity {
             // (Plain `transparent`, not color-mix(): that is Chrome 111+ and an
             // older WebView silently drops the declaration.)
             "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
-            "'[class*=\"_pageBar\"]::before,'+" +
+            "'[class*=\"_pageBar\"],[class*=\"_pageBar\"]::before,'+" +
+            "'[class*=\"_pageBar\"]::after,'+" +
+            "'[class*=\"_pageHead\"],[class*=\"_pageTabs\"],[class*=\"_pageTabList\"],'+" +
+            "'[data-dsh-market-root] [class*=\"_body\"],'+" +
+            "'.X_2TxG_pageBar,.X_2TxG_pageHead,.X_2TxG_pageTabs,'+" +
+            "'.nUhMVa_head,.nUhMVa_cats,.nUhMVa_stickyHead,.nUhMVa_body,'+" +
             // dshmarket's own root carries `data-dsh-market-root` in BOTH
             // surfaces; `data-dsh-market-plugins-tab` only exists when the
             // market is rendered as the standalone plugin page. Keying the
