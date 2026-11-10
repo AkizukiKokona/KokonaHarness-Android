@@ -1045,13 +1045,18 @@ public class EngineService extends Service {
         env.put("KOKONA_RUNTIME", runtimePath);
         env.put("TERMUX__PREFIX", runtimePath);
         env.put("TERMUX__ROOTFS", "/");
-        // kokona-glibc/bin carries the prefix's own tools (kokona-grun, getent,
-        // iconv ...). Without it on PATH every skill's first command fails with
-        // "not found"; KOKONA_GLIBC pins the prefix for scripts that are run
-        // through a shell that did not inherit this environment.
+        // KOKONA_GLIBC pins the prefix for scripts run through a shell that did
+        // not inherit this environment; the launchers themselves also resolve it
+        // from their own location, so this is a shortcut, not the only source.
         env.put("KOKONA_GLIBC", runtimePath + "/kokona-glibc");
-        env.put("PATH", runtimePath + "/bin:" + runtimePath
-                + "/kokona-glibc/bin:/system/bin:/system/xbin");
+        // kokona-glibc/bin deliberately does NOT join PATH any more. Its nine
+        // tools used to sit behind the bionic bin purely by ordering, and the
+        // only reason nothing broke is that no name collided yet -- a bionic
+        // curl/git/node would silently resolve to the glibc build the moment
+        // one did. The glibc tools now have their own k-prefixed launchers in
+        // <runtime>/bin (kiconv, kgetent, ...), plus kokona-grun itself, so the
+        // two namespaces cannot overlap at all.
+        env.put("PATH", runtimePath + "/bin:/system/bin:/system/xbin");
         env.put("LD_LIBRARY_PATH", runtimePath + "/lib");
         env.put("TMPDIR", tmp.getAbsolutePath());
         env.put("TEMP", tmp.getAbsolutePath());

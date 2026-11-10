@@ -29,12 +29,24 @@ if [ -d lib/locale ]; then
   find lib/locale -mindepth 2 -maxdepth 2 \
     ! -name 'C.utf8' ! -name 'en_US' -exec rm -rf {} + 2>/dev/null || true
 fi
-# gconv: keep a common subset for iconv consumers
+# gconv: keep EVERYTHING. Two traps live here and both cost a release:
+#   1. the CJK modules dlopen their per-charset tables from the same directory
+#      (EUC-KR.so -> libKSC.so, EUC-JP.so -> libJIS.so, BIG5.so -> libCNS.so),
+#      so a name whitelist silently breaks exactly the encodings people want;
+#   2. glibc installs the iconvdata registry as a *fragment* under
+#      gconv-modules.d/, and the single gconv-modules file only carries the 26
+#      Latin/UTF entries. Loaders that do not read the fragment directory end up
+#      with "conversion to `EUC-KR' is not supported" for every CJK charset
+#      even though all the .so files are sitting right there.
+# The whole directory is under 1 MB, so there is nothing to gain by trimming.
 if [ -d lib/gconv ]; then
-  find lib/gconv -type f ! -name 'gconv-modules' \
-    ! -regex '.*\(UTF-16\|UTF-32\|UTF-7\|ISO8859-1\|ISO8859-15\|GBK\|GB18030\|GB2312\|BIG5\|EUC-JP\|SJIS\|EUC-KR\|KOI8-R\|CP1251\|CP1252\|CP437\|CP850\|ANSI_X3.4-1968\)\.so$' -delete
-  # cache indexes modules we just deleted; drop it so iconv uses gconv-modules
   rm -f lib/gconv/gconv-modules.cache
+  extra=$OLDPWD/build/iconvdata/gconv-modules.d/gconv-modules-extra.conf
+  if [ -f "$extra" ] && ! grep -q 'iconvdata modules' lib/gconv/gconv-modules; then
+    printf '\n# --- iconvdata modules (CJK, Cyrillic, legacy code pages) ---\n' \
+      >> lib/gconv/gconv-modules
+    grep -v '^#' "$extra" | sed '/^[[:space:]]*$/d' >> lib/gconv/gconv-modules
+  fi
 fi
 
 # --- launcher ----------------------------------------------------------------
@@ -48,41 +60,57 @@ cat > bin/kokona-grun <<'EOS'
 # The prefix is derived from this script's own location first, so the runner
 # keeps working no matter which package name or install path the app is
 # unpacked into. KOKONA_GLIBC overrides it; the hard-coded fallback is last.
-if [ -n "$KOKONA_GLIBC" ]; then
+G=""
+if [ -n "${KOKONA_GLIBC:-}" ]; then
   G="$KOKONA_GLIBC"
 else
   case "$0" in
-    */*) G=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd) ;;
-    *)   G="" ;;
+    */*)
+      d=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+      # Two install positions are supported: prefix/bin/kokona-grun (dir up) and
+      # runtime/bin/kokona-grun (dir up + kokona-glibc), so the launcher can be
+      # copied next to the bionic tools without hard-coding a package name.
+      if [ -d "$d/../kokona-glibc/lib" ]; then
+        G=$(cd "$d/../kokona-glibc" && pwd)
+      elif [ -d "$d/../lib" ]; then
+        G=$(cd "$d/.." && pwd)
+      fi
+      ;;
   esac
-  [ -n "$G" ] && [ -d "$G/lib" ] || G="/data/user/0/com.kokonaharness.android.akizuki/files/KokonaRuntime/kokona-glibc"
 fi
+[ -n "$G" ] || G="/data/user/0/com.kokonaharness.android.akizuki/files/KokonaRuntime/kokona-glibc"
 
 [ -x "$G/lib/ld-linux-aarch64.so.1" ] || {
   echo "kokona-grun: glibc runtime missing at $G" >&2
   exit 127
 }
 
-# Put the prefix's own tools (getent, iconv, ...) on PATH so a glibc program
-# can shell out to them the way it would on a normal Linux box.
-case ":$PATH:" in
-  *":$G/bin:"*) ;;
-  *) PATH="$G/bin:$PATH"; export PATH ;;
-esac
+# NOTE: $G/bin is deliberately NOT added to PATH. The bionic runtime already
+# owns /bin, and the two namespaces were only kept apart by PATH order plus the
+# accident that no name collided. Prefixed launchers (kiconv, kgetent, ...) live
+# in the runtime's own bin instead, so a future packaging mistake cannot shadow
+# a bionic command with a glibc one. Anything that does want the bare names can
+# still run "$G/bin/<tool>" or pass --library-path itself.
 
 # Refresh DNS for this run. glibc cannot resolve without a nameserver line, and
 # Android 10+ no longer publishes net.dns*: the app writes the live resolver
 # list to etc/dns.servers, then props, then a public fallback.
+# Order matters: the app writes the *live* resolver list to etc/dns.servers on
+# every network change, which is the only source that works on Android 10+ (the
+# net.dns* props are not published there). getprop stays as a fallback for older
+# devices that still have them.
 ns=""
-for p in net.dns1 net.dns2 net.dns3 net.dns4; do
-  v=$(getprop "$p" 2>/dev/null)
-  case "$v" in
-    '' | *[!0-9a-fA-F.:]*) ;;
-    *) ns="$ns nameserver $v" ;;
-  esac
-done
-if [ -z "$ns" ] && [ -s "$G/etc/dns.servers" ]; then
+if [ -s "$G/etc/dns.servers" ]; then
   ns=$(cat "$G/etc/dns.servers" 2>/dev/null)
+fi
+if [ -z "$ns" ]; then
+  for p in net.dns1 net.dns2 net.dns3 net.dns4; do
+    v=$(getprop "$p" 2>/dev/null)
+    case "$v" in
+      '' | *[!0-9a-fA-F.:]*) ;;
+      *) ns="$ns nameserver $v" ;;
+    esac
+  done
 fi
 [ -n "$ns" ] || ns="nameserver 1.1.1.1
 nameserver 8.8.8.8"
@@ -93,13 +121,30 @@ nameserver 8.8.8.8"
 
 unset LD_PRELOAD LD_LIBRARY_PATH LD_DEBUG LD_DEBUG_OUTPUT LD_BIND_NOW
 
-# C.UTF-8 is built into glibc and needs no locale files on disk. The app
-# exports en_US.UTF-8, and this prefix ships no compiled locales, so every
-# program used to start with "setlocale: LC_ALL: cannot change locale".
-if [ -z "$LANG" ] || [ ! -d "$G/share/locale/$LANG" ]; then
-  LANG=C.UTF-8
+# Locale. This prefix ships no compiled locale data (the glibc 2.44 tree has no
+# localedef definition for C.UTF-8, and locale data compiled by a *different*
+# glibc version aborts with "stack smashing detected" instead of degrading), so
+# C.UTF-8 is not available no matter what LANG says. C is: it is built into
+# libc, it never prints a warning, and it is byte-transparent, so UTF-8 text
+# still passes through unchanged. The app exports en_US.UTF-8, which is exactly
+# what used to produce three "Cannot set LC_*" lines on every `locale` run.
+#
+# An explicit LANG/LC_ALL from the caller wins, so a user who compiles locale
+# data into lib/locale can opt in without editing this script.
+if [ -z "${LC_ALL:-}" ]; then
+  case "${LANG:-}" in
+    '' | C | POSIX | *[!A-Za-z0-9_.@-]*) LC_ALL=C ;;
+    *)
+      # Keep a locale the caller asked for only when data for it exists.
+      if [ -d "$G/lib/locale/$LANG" ] || [ -f "$G/lib/locale/locale-archive" ]; then
+        LC_ALL="$LANG"
+      else
+        LC_ALL=C
+      fi
+      ;;
+  esac
 fi
-LC_ALL=C.UTF-8
+LANG=$LC_ALL
 export LANG LC_ALL
 
 RT="$(dirname "$G")"
@@ -128,6 +173,17 @@ ethers: files
 rpc: files
 EOF
 [ -f etc/gai.conf ] || touch etc/gai.conf
+# getent services / protocols / networks read these tables and return rc=2
+# without them. They are small text files; ship the vendored copies so the
+# image does not depend on the build host's /etc.
+ETC_SRC=$(cd "$OLDPWD" && pwd)/etc
+for f in services protocols networks; do
+  if [ -f "$ETC_SRC/$f" ]; then
+    cp -f "$ETC_SRC/$f" "etc/$f"
+  elif [ -f "/etc/$f" ]; then
+    cp -f "/etc/$f" "etc/$f"
+  fi
+done
 : > etc/resolv.conf
 [ -f etc/hosts ] || printf '127.0.0.1 localhost\n::1 localhost\n' > etc/hosts
 

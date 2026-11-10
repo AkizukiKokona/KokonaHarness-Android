@@ -63,7 +63,33 @@ KokonaHarness 只在需要跑 glibc 程序时才用这套前缀，bionic 仍是�
    `bin/` 下的工具（含 loader）必须是 0755。丢执行位时 Android 会把 `EACCES` 折叠成
    `ENOENT`，报错看起来像"缺库"，其实是没权限 —— 用 `chmod` 修，不要重编。
 
-7. **locale**
-   前缀不打包编译好的 locale 数据（体积大且需要 `localedef` 跑在目标架构上）。
-   `kokona-grun` 因此把 `LANG`/`LC_ALL` 兜底成内置的 `C.UTF-8`，否则每个程序启动都会
-   刷 `setlocale: LC_ALL: cannot change locale`。
+7. **locale：C.UTF-8 其实不存在**
+   前缀不打包编译好的 locale 数据。`kokona-grun` 早期把 `LANG`/`LC_ALL` 兜底成 `C.UTF-8`，
+   但这份 glibc 里根本没有 `C.UTF-8` 的数据（2.44 的源码树里没有 `localedata/locales/C.UTF-8`），
+   于是 `locale` 每次都会刷三行 `Cannot set LC_* to default locale`。
+   两条弯路都试过，都失败：
+   - 用宿主（x86_64，glibc 2.41）的 `localedef` 生成 `locale-archive`：格式魔数对得上，但数据
+     结构不兼容，aarch64 glibc 读到时直接 `stack smashing detected` 中止 —— 比三行警告更糟；
+   - 用 `build/locale/localedef`（2.44，注意 2.44 把 localedef 从顶层 `localedef/` 挪进了
+     `locale/programs/`）在本机跑：需要 `share/i18n/{locales,charmaps}`，生成的 archive 仍然
+     让 `locale` 崩。
+   结论：**默认 `LC_ALL=C`**。C 是内建的、零警告、字节透明（UTF-8 文本原样透传），
+   调用方显式给 `LC_ALL` 时优先用调用方的值。
+
+8. **gconv：注册表和模块表是两个坑**
+   - 注册表：glibc 把 `iconvdata` 的模块清单装成 `gconv-modules.d/gconv-modules-extra.conf`
+     （524 条），主 `gconv-modules` 只有 26 条 Latin/UTF。不把 fragment 并进主文件，
+     `iconv -t EUC-KR` 一律 `not supported`，而 `.so` 明明都在。
+   - 模块表：`EUC-KR.so` 会 dlopen 同目录的 `libKSC.so`（`EUC-JP.so` → `libJIS.so`，
+     `BIG5.so` → `libCNS.so`）。按名字白名单裁剪 gconv 目录，等于精确地把 CJK 弄坏。
+     整个目录不到 1 MB，别裁。
+
+9. **etc/services 等表** `getent services/protocols/networks` 读的是纯文本表，缺文件直接
+   `rc=2`。仓库里 `glibc-run/etc/` 放了一份随包发，`assemble.sh` 优先用仓库副本。
+
+10. **PATH 隔离：别让前缀的 bin 进 PATH**
+   `kokona-glibc/bin` 与 bionic 的 `KokonaRuntime/bin` 目前零撞名，靠的是 PATH 顺序 ——
+   哪天某个 bionic 同名文件被塞进来，`curl`/`git`/`node` 就会静默变成 glibc 版。
+   现在改成**前缀别名**：`kiconv / kgetent / kgetconf / klocale / kldd / kgencat / kpldd`
+   放在 `KokonaRuntime/bin`（外加 `kokona-grun` 本体，它按自身位置推导前缀），
+   `kokona-glibc/bin` 不再进 PATH，两个命名空间结构上不可能重叠。

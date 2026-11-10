@@ -479,6 +479,31 @@ if [ -d "$GLIBC_SRC" ]; then
   # symlink or hard link in the archive simply never appears on the phone.
   # That is how lib/ld-linux-aarch64.so.1 went missing while bin/ld.so survived.
   cp -rLp "$GLIBC_SRC/." "$RT/kokona-glibc/"
+
+  # Prefixed launchers, so the glibc prefix never has to join PATH.
+  #
+  # The bionic runtime owns bin/. Putting the prefix's bin on PATH only stayed
+  # safe because none of its nine tools happened to share a name with a bionic
+  # binary -- PATH order was the only thing keeping curl/git/node from being
+  # shadowed. One packaging mistake and a bionic command silently turns into a
+  # glibc one. Prefixing the names removes the possibility instead of managing
+  # the risk: kiconv, kgetent, kgetconf, klocale, kldd, kgencat, kpldd.
+  for tool in getconf getent iconv locale ldd gencat pldd; do
+    cat > "$RT/bin/k$tool" <<EOS
+#!/system/bin/sh
+# k$tool - glibc $tool from the bundled kokona-glibc prefix.
+# Prefixed on purpose: the bare name belongs to the bionic runtime.
+d=\$(dirname "\$0")
+if [ -n "\${KOKONA_GLIBC:-}" ]; then G="\$KOKONA_GLIBC"; else G="\$d/../kokona-glibc"; fi
+[ -x "\$G/lib/ld-linux-aarch64.so.1" ] || { echo "k$tool: glibc runtime missing at \$G" >&2; exit 127; }
+exec "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$G/lib:\$HOME/.local/lib/kokona-glibc" "\$G/bin/$tool" "\$@"
+EOS
+    chmod 755 "$RT/bin/k$tool"
+  done
+  # kokona-grun resolves the prefix from its own location, so a copy next to
+  # the bionic tools finds ../kokona-glibc without any package name baked in.
+  cp -f "$RT/kokona-glibc/bin/kokona-grun" "$RT/bin/kokona-grun"
+  chmod 755 "$RT/bin/kokona-grun"
 else
   echo "WARNING: glibc staging missing ($GLIBC_SRC); runtime ships without kokona-glibc" >&2
 fi
