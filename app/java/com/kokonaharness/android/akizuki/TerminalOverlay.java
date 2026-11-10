@@ -160,14 +160,19 @@ final class TerminalOverlay {
 
         GradientDrawable shape = new GradientDrawable();
         shape.setColor(0xfff7f8fa);
-        shape.setCornerRadius(dp(16));
+        // Full-screen layer: no corner radius, otherwise the top corners of a
+        // screen-filling sheet leave two wedges of the page behind it.
+        shape.setCornerRadius(0);
         panel.setBackground(shape);
 
         sheet = panel;
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT, Gravity.BOTTOM);
-        lp.topMargin = dp(72);
+        // Was dp(72): the sheet stopped short of the top edge, which read as a
+        //半屏 panel. The terminal now owns the whole screen and closes back onto
+        // whatever was underneath — the settings dialog stays alive.
+        lp.topMargin = 0;
         sheet.setVisibility(View.GONE);
         host.addView(sheet, lp);
 

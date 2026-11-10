@@ -8,7 +8,7 @@
 
 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 是一个会读文件、跑脚本、调工具的 AI 引擎，过去主要待在电脑和服务器上。KokonaHarness 做的事很单纯：让这套引擎直接跑在 Android 手机上，界面沿用官方的 DSH Web UI，再把手机自己的屏幕、通知、剪贴板、截图这些能力，一项一项按你的授权交给它。
 
-> Android 8.1+ · arm64 · 当前 **1.0.40**（140）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r34**
+> Android 8.1+ · arm64 · 当前 **1.0.43**（143）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r34**
 
 ## 我们的路线：不用 PRoot，也不为兼容退回 PRoot
 
@@ -119,7 +119,7 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 
 **定位**：九项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
 
-已实施（1.0.40）：
+已实施（1.0.43）：
 
 1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
 2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点「允许」后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
@@ -154,6 +154,16 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 > **Windows 上完整跑通踩过的坑**（路径转换、classpath 分隔符、`-encoding UTF-8`、
 > Unix 执行位丢失、tar/PAX、`xz`、批量删除保护、CPython 只能 Linux 宿主等）
 > 集中记在 [`WINDOWS-BUILD.md`](WINDOWS-BUILD.md)。
+>
+> **自己编译要留意的四件事**
+> 1. **签名**：`build.sh` 把 keystore 放在 `$BUILD_DIR/kokona.keystore`，**不存在就现场生成一个**。
+>    想产出能覆盖安装到现有设备上的包，请复用同一个 keystore（换 `BUILD_DIR` 时记得先复制）。
+> 2. **SDK 版本可覆盖**：脚本默认 `build-tools/35.0.0` + `platforms/android-35`，SDK 里没装这两个时用
+>    `ANDROID_BUILD_TOOLS` / `ANDROID_PLATFORM` 指过去，不用改脚本。
+> 3. **缺 `zip` 也能打**：Git Bash 不附带 `zip`，脚本会自动改用 `tools/zip.py`。
+> 4. **SHIM 语法门禁**：注入 WebView 的脚本是一串拼接的 Java 字符串字面量，少一个引号就会整段
+>    语法错误且 `evaluateJavascript()` **静默失败**（所有样式与侧栏品牌一起失效，日志里却什么都没有）。
+>    打包前会先跑 `tools/check-shim.cjs`，不通过直接中断。
 
 **三份必备素材**
 
@@ -202,7 +212,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 140 / versionName 1.0.40
+│   ├── AndroidManifest.xml        # versionCode 143 / versionName 1.0.43
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -248,6 +258,10 @@ KokonaHarness-Android/
 <details>
 <summary>展开开发记录</summary>
 
+**1.0.43** **左侧抽屉**与**设置面板**加上毛玻璃（`backdrop-filter:blur(14px)` + 72% 底）。抽屉原本是实底色，压在主页上亮度几乎一致，两块会读成同一层，所以必须配一点模糊才有边界；设置面板的 `::before` 从 82% 降到 70%，让模糊透出来而不是被近不透明的白盖住。**终端改为全屏**：原先 `MATCH_PARENT` 仍留着 72dp 顶边距和 16dp 圆角，看着像半屏抽屉；现在边距与圆角归零，整个屏幕就是一层终端，点 × 或返回键回到仍然打开的设置界面。README 另补「自己编译要留意的四件事」（keystore、SDK 版本覆盖、zip、SHIM 门禁）。版本号 1.0.43（versionCode 143）。
+
+**1.0.42** 找到 1.0.39 之后「怎么改都没反应」的真正原因：合并 CSS 规则时少了一个引号，注入脚本拼接出来是 `...{'background:...}`，整段 JS 语法错误。而 `evaluateJavascript()` **不上报语法错误**，于是那几版里样式与侧栏品牌一起静默失效，日志干干净净。修复拼接；`brand.svg` 内嵌的 82 KB PNG 用 ImageIO 重编码到 96px 高（SVG 115 KB → 20 KB），品牌图不再走 CSS 变量而是直接内联进 `::after`；`build.sh` 增加 `check-shim.cjs` 门禁。版本号 1.0.42（versionCode 142）。
+
 **1.0.40** 插件页那两条**纯白**其实不是"浓度"问题，是**叠加**：设置面板自己有一层 `::before{background:var(--token);opacity:.82}`，顶栏再叠一层 82% 白，合成就是 1−0.18×0.18≈**96.8%**，肉眼等同纯白，所以怎么调 alpha 都"没有半透明效果"。现在把内置插件管理器的 `.pageBar:before` 与 dshmarket 的 `_stickyHead` / `_head` / `_cats` 一律设为 `transparent`，直接露出面板那一层——顶栏与周围**同一块表面**，边界自然消失。同时修掉 `pageBar::after` 被误加背景（compact 时它只有边框）造成的又一层叠加。侧栏品牌标识也加了两道保险：`--kn-brand` 改为每次加载只写一次（原来用 getPropertyValue 比对 150 KB 的 data URL 永远不相等，等于每轮同步都写 `documentElement.style`，会触发侧栏观察者），并在 `html[data-kn-sb="closed"]` 下把普通 toggle 也纳入品牌锚点，展开态仍然完全不动。版本号 1.0.40（versionCode 140，可覆盖安装）。
 
 **1.0.39** 插件页顶部的**纯白块**（设置 →「插件」，管理页与市场页都有）。真因两条，都不是浓度问题：其一，`color-mix()` 是 Chrome 111+ 语法，设备 WebView 较旧时整条声明被丢弃，回退到 `background: var(--dsw-alias-bg-layer-2)` —— 纯色令牌，于是变成完全不透明的白；现改回 `rgba(255,255,255,.82)` / `rgba(26,26,29,.82)`，任何 WebView 都认。其二，设置面板本身已有 `::before{inset:0;background:var(--dsw-alias-bg-layer-2);opacity:.82}` 铺底，上一版又给面板加了一层背景，两层叠加把弹窗推向实心白；现改为 `background:transparent`，半透明交还上游的 `::before`。另外侧栏收起时的**品牌标识**改为脚本标记锚点（优先 `[data-sidebar-opener]`，否则取非弹窗内的收起态按钮），不再因为某个界面渲染了别的按钮就退回官方图标；展开态不受影响。版本号 1.0.39（versionCode 139，可覆盖安装）。
@@ -289,7 +303,7 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.0.40**（versionCode 140）
+- App：**1.0.43**（versionCode 143）
 - DSH：**0.2.2-rc.1**
 - KokonaRuntime：**dsh-0.2.2-rc.1-r33**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`

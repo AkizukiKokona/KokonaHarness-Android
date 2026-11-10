@@ -255,6 +255,31 @@ public class MainActivity extends Activity {
             // the dialog drifted towards solid white. Hand the surface back to
             // upstream and let the ::before own the translucency.
             "'.VOzbGW_panel{background:transparent!important;}'+" +
+            // Frosted glass for the drawer and the settings dialog.
+            //
+            // These come AFTER the blanket `backdrop-filter:none` safety net
+            // above, and they are written with a higher-specificity selector
+            // (`[role=dialog] .VOzbGW_panel` beats `[role=dialog] *`), because
+            // that net exists to stop the GPU from tearing a full-screen blur on
+            // some devices. A bounded 14 px blur on two panels is cheap; a blur
+            // on every descendant of the overlay was not.
+            //
+            // Without the blur the translucent drawer sits on top of the home
+            // page at the same brightness and the two read as one surface —
+            // which is exactly what was reported.
+            "'[data-sidebar-drawer] .pI_x6G_sidebarCol{background:rgba(255,255,255,.72)!important;" +
+            "-webkit-backdrop-filter:blur(14px) saturate(115%)!important;" +
+            "backdrop-filter:blur(14px) saturate(115%)!important;}'+" +
+            // The drawer leaves the app's own backdrop visible, so the dark
+            // palette needs its own fill; the blur itself is colour-neutral.
+            "'body[data-ds-dark-theme] .pI_x6G_frame[data-sidebar-drawer] " +
+            ".pI_x6G_sidebarCol{background:rgba(24,24,27,.72)!important;}'+" +
+            "'[role=\"dialog\"] .VOzbGW_panel,[aria-modal=\"true\"] .VOzbGW_panel{" +
+            "-webkit-backdrop-filter:blur(14px)!important;backdrop-filter:blur(14px)!important;}'+" +
+            // The panel paints its surface with ::before at 82%; dropping it to
+            // 70% is what lets the blurred backdrop read through instead of
+            // being covered by a near-opaque sheet.
+            "'.VOzbGW_panel::before{opacity:.7!important;}'+" +
             // No dark-theme counterpart is needed: those bars are transparent in
             // both schemes now, and the panel token behind them already flips.
             // dshmarket hides the settings <nav> on narrow screens with
@@ -377,7 +402,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.42";
+    private static final String APP_VERSION = "1.0.43";
 
     private EngineService.Listener engineListener;
 
