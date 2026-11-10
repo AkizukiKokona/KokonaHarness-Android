@@ -68,6 +68,13 @@ ROOT="$(to_win "$ROOT")"; SDK="$(to_win "$SDK")"; BUILD="$(to_win "$BUILD")"
   ```
 - `zip -q -X` 去掉额外字段；`runtime.tar.xz` 已经压过，用 `zip -0` 存储别再压；`zipalign -f -p 4` 对齐后再 `apksigner sign --v1 --v2`。
 - `apksigner verify` 会打印 JDK 17/21 的 `restricted method / native access` 警告，那是 JVM 提示，不是签名失败；过滤掉看 exit code 即可。
+- **Git Bash 没有 `zip`**（只有 `zipinfo` / `zipgrep`），打包会直接 `zip: command not found`。仓库里的 `tools/zip.py` 实现了构建用到的那点参数（`-q -X`、`-0`），`build.sh` 检测不到 `zip` 时自动用它。要换真 zip 也行，别改脚本逻辑。
+- **`d8` 和 `apksigner` 在 Windows 上只有 `.bat`**。MSYS 只会替 `.exe` 自动补后缀，所以 `"$BT/d8"` 一定 `No such file or directory`。`build.sh` 用 `pick_tool` 探测 `.bat` 版本（`aapt2` / `zipalign` 是 `.exe`，不用管）。
+- **SDK 版本不要硬编码**：本机 `platforms/` 只有 `android-30/34/36`、`build-tools/` 只有 `35.0.0/36.0.0` 时，写死 `android-35` 会直接报 `missing .../android.jar`。用 `ANDROID_BUILD_TOOLS` / `ANDROID_PLATFORM` 覆盖即可：
+  ```bash
+  export ANDROID_BUILD_TOOLS="C:/Users/me/AppData/Local/Android/Sdk/build-tools/36.0.0"
+  export ANDROID_PLATFORM="C:/Users/me/AppData/Local/Android/Sdk/platforms/android-36/android.jar"
+  ```
 
 ## 5. Unix 权限位会在 Windows 打包时丢
 
@@ -115,6 +122,14 @@ tar -C "$SRC" --exclude=... -cf - . | tar -C "$DST" -xf -
 
 **tar 覆盖不会删除目标端多余文件**。包名从 `com/knh/akizukikokona` 换成 `com/kokonaharness/android/akizuki` 之后，D 盘的旧包目录一直留着；虽然旧目录里已经没有 `.java`，但只要还有就会被 `find app/java -name '*.java'` 收进编译列表。改包名 / 删包时记得手动清掉构建副本里的旧目录。
 
+### 8.1 换 `BUILD_DIR` 时别忘了 keystore
+
+`build.sh` 把签名文件放在 `$BUILD_DIR/kokona.keystore`，找不到就**现场生成一个新的**。换目录构建（例如清不掉旧产物、改用 `out39/`）而忘了复制 keystore，产出的 APK 签名就变了，设备上只能卸载重装、数据全丢。换目录第一件事：
+
+```bash
+mkdir -p out39 && cp out/kokona.keystore out39/kokona.keystore
+```
+
 ## 9. WebView 注入脚本（SHIM）的本地校验
 
 `MainActivity.SHIM` 是由上百个 Java 字符串字面量拼出来的 JS，语法错一次要到真机上才发现。`tools/check-shim.cjs` 按 javac 语义跳过 `//` 与 `/* */` 注释、只拼接字符串字面量，再用 `new Function(js)` 校验：
@@ -147,3 +162,7 @@ node tools/check-shim.cjs   # SHIM OK: concatenated JS parses cleanly
 | `OpenSSL configuration error ... Permission denied` | Termux 库硬编码 OPENSSLDIR，注入 `OPENSSL_CONF` |
 | `ERR_INVALID_PACKAGE_CONFIG` 随机失败 | Node 26 原生 reader，靠 `kha-node-patch.cjs` |
 | 设置页花屏 / 卡死 | 全屏半透明层 + blur + 逐帧 transform，别动包含块 |
+| `zip: command not found` | Git Bash 不带 zip，用 `tools/zip.py` |
+| `.../build-tools/xx/d8: No such file` | Windows 上只有 `d8.bat`，用 `pick_tool` |
+| `missing .../platforms/android-35/android.jar` | SDK 里没装该平台，用 `ANDROID_PLATFORM` 覆盖 |
+| 覆盖安装提示签名不一致 | 换了 `BUILD_DIR` 没复制 `kokona.keystore` |

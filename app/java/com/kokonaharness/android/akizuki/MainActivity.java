@@ -214,9 +214,18 @@ public class MainActivity extends Activity {
             // the end pins dark translucency explicitly for those builds.
             // The CSS-module suffixes (_stickyHead, _head, VOzbGW_panel) stay
             // stable across upstream builds.
+            // The market page paints THREE separate opaque bars with
+            // `var(--dsw-alias-bg-base,#fff)`: `_stickyHead` (the scroll
+            // container's sticky wrapper), `_head` (the title/actions row) and
+            // `_cats` (the sticky category filter row directly below it). The
+            // first pass covered the first two only, so the category row stayed
+            // a solid slab floating on the translucent panel — which is exactly
+            // what "one white block surrounded by transparency" looked like.
+            // All three, plus their ::before overhang, are covered here.
             "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
             "'[class*=\"_pageBar\"]::before,'+" +
-            "'[data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
+            "'[data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
+            "'[data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
             "background:var(--dsw-alias-bg-base,#fff)!important;" +
             "background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 72%,transparent)!important;}'+" +
             // Settings dialog: translucent chrome everywhere, like the main
@@ -229,7 +238,8 @@ public class MainActivity extends Activity {
             "'body[data-ds-dark-theme] .VOzbGW_panel{background:rgba(26,26,29,.82)!important;}'+" +
             "'body[data-ds-dark-theme] [class*=\"_stickyHead\"],'+" +
             "'body[data-ds-dark-theme] [class*=\"_stickyHead\"]::before,'+" +
-            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_head\"]{'+" +
+            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
+            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
             "background:rgba(26,26,29,.72)!important;}'+" +
             // dshmarket hides the settings <nav> on narrow screens with
             // [role=dialog]:has([data-dsh-market-root])>nav{display:none};
@@ -345,7 +355,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.38";
+    private static final String APP_VERSION = "1.0.39";
 
     private EngineService.Listener engineListener;
 
