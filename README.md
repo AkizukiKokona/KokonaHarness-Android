@@ -248,7 +248,7 @@ KokonaHarness-Android/
 <details>
 <summary>展开开发记录</summary>
 
-**1.0.39** 内置插件页顶部那块白底。其实不是 dshmarket，而是**官方插件管理器**（设置 →「插件」）自己的页头遮罩：`.pageBar[data-natural]:before` 用实心 `var(--dsw-alias-bg-base)` 在选项卡上方铺了一整条不透明背景，压在 82% 半透明的设置面板上，就成了一块浮在中间的白色。上一版把它一起按 72% 处理，浓度和面板不一致，边界仍然看得出来；现在单独拆出来，用**和面板完全相同的令牌与 82% 透明度**，深色分支同步，白块才真正消失。版本号 1.0.39（versionCode 139，可覆盖安装）。
+**1.0.39** 插件页顶部的**纯白块**（设置 →「插件」，管理页与市场页都有）。真因两条，都不是浓度问题：其一，`color-mix()` 是 Chrome 111+ 语法，设备 WebView 较旧时整条声明被丢弃，回退到 `background: var(--dsw-alias-bg-layer-2)` —— 纯色令牌，于是变成完全不透明的白；现改回 `rgba(255,255,255,.82)` / `rgba(26,26,29,.82)`，任何 WebView 都认。其二，设置面板本身已有 `::before{inset:0;background:var(--dsw-alias-bg-layer-2);opacity:.82}` 铺底，上一版又给面板加了一层背景，两层叠加把弹窗推向实心白；现改为 `background:transparent`，半透明交还上游的 `::before`。另外侧栏收起时的**品牌标识**改为脚本标记锚点（优先 `[data-sidebar-opener]`，否则取非弹窗内的收起态按钮），不再因为某个界面渲染了别的按钮就退回官方图标；展开态不受影响。版本号 1.0.39（versionCode 139，可覆盖安装）。
 
 **1.0.38** 修掉插件化之后的四个真机问题。其一，**客户端插件没声明 `inject`**：`ctx.slots` 属于受声明保护的服务，不导出 `exports.inject = ['slots']` 就会被上下文守卫直接拒绝，异常又被注册守卫吞掉，结果插件市场里能看到这个包、日志里却什么都没有，设置页**始终不出现 KHA 选项卡**。其二，**运行时版本没升导致新旧插件重叠**：r33 的快照里已经带着旧的设置页与旧插件目录，升级后只覆盖了少量文件，旧的 `KHA-Setthings` 与新的 `kha-setthings` 叠在一起；运行时提到 **r34**，强制一次全量重解压 + 原子替换，启动时再对大写旧包名做四处清理（运行时目录、profile 软链、`dependencies` 与 `dsh.profile.bundles`、`cordis.patch.yml` 的 `insert` 行）。其三，`kha-setthings` 不再写进 `dependencies`：它是随运行时下发的自有包、没有 registry 条目，假版本号会让插件管理器一跑 `pnpm install` 就整盘解析失败；改由 `node_modules` 软链 + `bundles` 行挂载，并修好悬空软链不会被重建的问题。其四，**品牌标识固化**：原先的 `html:not([data-kn-modal="1"])` 条件会随任何可见的 `[role=dialog]` 翻转，切界面回来或弹出全屏提示时就退回官方图标；现改为无条件生效。另外半透明不再是写死的白色，顶栏与设置面板改用 `color-mix()` 跟随主题令牌，并显式补 `body[data-ds-dark-theme]` 分支。版本号 1.0.38（versionCode 138，可覆盖安装）。
 

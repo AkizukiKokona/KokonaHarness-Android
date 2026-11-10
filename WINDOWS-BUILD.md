@@ -162,6 +162,8 @@ node tools/check-shim.cjs   # SHIM OK: concatenated JS parses cleanly
 | `OpenSSL configuration error ... Permission denied` | Termux 库硬编码 OPENSSLDIR，注入 `OPENSSL_CONF` |
 | `ERR_INVALID_PACKAGE_CONFIG` 随机失败 | Node 26 原生 reader，靠 `kha-node-patch.cjs` |
 | 设置页花屏 / 卡死 | 全屏半透明层 + blur + 逐帧 transform，别动包含块 |
+| WebView 里 `color-mix()` 不生效、颜色变纯色 | Chrome 111+ 语法，旧 WebView 直接丢弃整条声明；半透明一律用 `rgba()` |
+| 设置弹窗越改越白 | `.VOzbGW_panel` 已有 `::before{opacity:.82}` 铺底，再给面板加 background 就是双层叠加 |
 | `zip: command not found` | Git Bash 不带 zip，用 `tools/zip.py` |
 | `.../build-tools/xx/d8: No such file` | Windows 上只有 `d8.bat`，用 `pick_tool` |
 | `missing .../platforms/android-35/android.jar` | SDK 里没装该平台，用 `ANDROID_PLATFORM` 覆盖 |
