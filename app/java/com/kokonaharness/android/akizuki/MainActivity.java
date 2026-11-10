@@ -222,28 +222,28 @@ public class MainActivity extends Activity {
             //   * the built-in plugin manager uses `.pageBar[data-natural]:before`
             //     (the white band above 插件管理 / 插件市场);
             //   * dshmarket uses `_stickyHead`, `_head` and `_cats`.
-            // Painting them a slightly-translucent white still read as a slab,
-            // because the settings panel behind them is 82% — two different
-            // opacities side by side is exactly what made the edge visible.
-            // One shared rule, the same token and the same 82% as the panel,
-            // is what makes them disappear into it. The token-only declaration
-            // first is the fallback for a WebView without color-mix().
-            // The CSS-module suffixes (_stickyHead, _head, _cats, _pageBar,
-            // VOzbGW_panel) stay stable across upstream builds.
+            //
+            // These MUST stay plain rgba(). An earlier revision used
+            // `color-mix(in srgb, var(--token) 82%, transparent)`, which reads
+            // nicely but is Chrome 111+: on a device whose WebView is older the
+            // declaration is dropped, the fallback `var(--token)` wins, and the
+            // bar comes back as FULLY OPAQUE white — "纯白，没有任何半透明效果".
+            // 82% rgba matches the settings panel's own `::before{opacity:.82}`
+            // exactly, so the bar and the panel have the same density.
             "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
             "'[class*=\"_pageBar\"]::before,[class*=\"_pageBar\"]::after,'+" +
             "'[data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
             "'[data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
-            "background:var(--dsw-alias-bg-layer-2,#fff)!important;" +
-            "background:color-mix(in srgb,var(--dsw-alias-bg-layer-2,#fff) 82%,transparent)!important;}'+" +
-            // Settings dialog: translucent chrome everywhere, like the main
-            // page (the upstream panel is fully opaque). Same 82%, same token.
-            "'.VOzbGW_panel{background:var(--dsw-alias-bg-layer-2,#fff)!important;" +
-            "background:color-mix(in srgb,var(--dsw-alias-bg-layer-2,#fff) 82%,transparent)!important;}'+" +
-            // Dark theme: the dialog and the plugin page must stay dark, so make
-            // the translucent chrome explicit rather than inherited from a token
-            // that an older WebView may not resolve.
-            "'body[data-ds-dark-theme] .VOzbGW_panel{background:rgba(26,26,29,.82)!important;}'+" +
+            "background:rgba(255,255,255,.82)!important;}'+" +
+            // The settings panel already paints its own translucent layer:
+            // `.VOzbGW_panel::before{position:absolute;inset:0;
+            // background:var(--dsw-alias-bg-layer-2);opacity:.82}`. Adding a
+            // background here stacks a second layer on top of it, which is why
+            // the dialog drifted towards solid white. Hand the surface back to
+            // upstream and let the ::before own the translucency.
+            "'.VOzbGW_panel{background:transparent!important;}'+" +
+            // Dark theme: only the bars need an explicit colour. The panel is
+            // left to its own `::before`, whose token already flips with theme.
             "'body[data-ds-dark-theme] [class*=\"_stickyHead\"],'+" +
             "'body[data-ds-dark-theme] [class*=\"_stickyHead\"]::before,'+" +
             "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::before,'+" +
