@@ -8,7 +8,7 @@
 
 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 是一个会读文件、跑脚本、调工具的 AI 引擎，过去主要待在电脑和服务器上。KokonaHarness 做的事很单纯：让这套引擎直接跑在 Android 手机上，界面沿用官方的 DSH Web UI，再把手机自己的屏幕、通知、剪贴板、截图这些能力，一项一项按你的授权交给它。
 
-> Android 8.1+ · arm64 · 当前 **1.0.39**（139）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r34**
+> Android 8.1+ · arm64 · 当前 **1.0.40**（140）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r34**
 
 ## 我们的路线：不用 PRoot，也不为兼容退回 PRoot
 
@@ -119,7 +119,7 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 
 **定位**：九项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
 
-已实施（1.0.39）：
+已实施（1.0.40）：
 
 1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
 2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点「允许」后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
@@ -202,7 +202,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 139 / versionName 1.0.39
+│   ├── AndroidManifest.xml        # versionCode 140 / versionName 1.0.40
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -248,6 +248,8 @@ KokonaHarness-Android/
 <details>
 <summary>展开开发记录</summary>
 
+**1.0.40** 插件页那两条**纯白**其实不是"浓度"问题，是**叠加**：设置面板自己有一层 `::before{background:var(--token);opacity:.82}`，顶栏再叠一层 82% 白，合成就是 1−0.18×0.18≈**96.8%**，肉眼等同纯白，所以怎么调 alpha 都"没有半透明效果"。现在把内置插件管理器的 `.pageBar:before` 与 dshmarket 的 `_stickyHead` / `_head` / `_cats` 一律设为 `transparent`，直接露出面板那一层——顶栏与周围**同一块表面**，边界自然消失。同时修掉 `pageBar::after` 被误加背景（compact 时它只有边框）造成的又一层叠加。侧栏品牌标识也加了两道保险：`--kn-brand` 改为每次加载只写一次（原来用 getPropertyValue 比对 150 KB 的 data URL 永远不相等，等于每轮同步都写 `documentElement.style`，会触发侧栏观察者），并在 `html[data-kn-sb="closed"]` 下把普通 toggle 也纳入品牌锚点，展开态仍然完全不动。版本号 1.0.40（versionCode 140，可覆盖安装）。
+
 **1.0.39** 插件页顶部的**纯白块**（设置 →「插件」，管理页与市场页都有）。真因两条，都不是浓度问题：其一，`color-mix()` 是 Chrome 111+ 语法，设备 WebView 较旧时整条声明被丢弃，回退到 `background: var(--dsw-alias-bg-layer-2)` —— 纯色令牌，于是变成完全不透明的白；现改回 `rgba(255,255,255,.82)` / `rgba(26,26,29,.82)`，任何 WebView 都认。其二，设置面板本身已有 `::before{inset:0;background:var(--dsw-alias-bg-layer-2);opacity:.82}` 铺底，上一版又给面板加了一层背景，两层叠加把弹窗推向实心白；现改为 `background:transparent`，半透明交还上游的 `::before`。另外侧栏收起时的**品牌标识**改为脚本标记锚点（优先 `[data-sidebar-opener]`，否则取非弹窗内的收起态按钮），不再因为某个界面渲染了别的按钮就退回官方图标；展开态不受影响。版本号 1.0.39（versionCode 139，可覆盖安装）。
 
 **1.0.38** 修掉插件化之后的四个真机问题。其一，**客户端插件没声明 `inject`**：`ctx.slots` 属于受声明保护的服务，不导出 `exports.inject = ['slots']` 就会被上下文守卫直接拒绝，异常又被注册守卫吞掉，结果插件市场里能看到这个包、日志里却什么都没有，设置页**始终不出现 KHA 选项卡**。其二，**运行时版本没升导致新旧插件重叠**：r33 的快照里已经带着旧的设置页与旧插件目录，升级后只覆盖了少量文件，旧的 `KHA-Setthings` 与新的 `kha-setthings` 叠在一起；运行时提到 **r34**，强制一次全量重解压 + 原子替换，启动时再对大写旧包名做四处清理（运行时目录、profile 软链、`dependencies` 与 `dsh.profile.bundles`、`cordis.patch.yml` 的 `insert` 行）。其三，`kha-setthings` 不再写进 `dependencies`：它是随运行时下发的自有包、没有 registry 条目，假版本号会让插件管理器一跑 `pnpm install` 就整盘解析失败；改由 `node_modules` 软链 + `bundles` 行挂载，并修好悬空软链不会被重建的问题。其四，**品牌标识固化**：原先的 `html:not([data-kn-modal="1"])` 条件会随任何可见的 `[role=dialog]` 翻转，切界面回来或弹出全屏提示时就退回官方图标；现改为无条件生效。另外半透明不再是写死的白色，顶栏与设置面板改用 `color-mix()` 跟随主题令牌，并显式补 `body[data-ds-dark-theme]` 分支。版本号 1.0.38（versionCode 138，可覆盖安装）。
@@ -287,7 +289,7 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.0.39**（versionCode 139）
+- App：**1.0.40**（versionCode 140）
 - DSH：**0.2.2-rc.1**
 - KokonaRuntime：**dsh-0.2.2-rc.1-r33**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`

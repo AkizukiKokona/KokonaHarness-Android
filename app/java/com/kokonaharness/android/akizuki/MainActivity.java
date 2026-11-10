@@ -170,23 +170,38 @@ public class MainActivity extends Activity {
             "window.__KOKONA_APPLY_BRAND__=function(){try{" +
             "markBrand();" +
             "var rootEl=document.documentElement;" +
+            // Write the variable exactly once per page load. Comparing a
+            // 150 KB `url("data:image/svg+xml;base64,…")` value against
+            // getPropertyValue() on every sync can never match once the engine
+            // normalises the string, so the guard turned into an unconditional
+            // write — and writing documentElement.style is itself a mutation
+            // the sidebar's observer watches. A boolean latch removes both the
+            // churn and the risk of a feedback loop.
             "var b=window.__KOKONA_BRAND_URL__;" +
-            "if(b){var want='url(\"'+b+'\")';" +
-            "if(rootEl.style.getPropertyValue('--kn-brand')!==want)rootEl.style.setProperty('--kn-brand',want);" +
+            "if(b&&!window.__KOKONA_BRAND_SET__){window.__KOKONA_BRAND_SET__=true;" +
+            "rootEl.style.setProperty('--kn-brand','url(\"'+b+'\")');" +
             "setAttr(rootEl,'data-kn-brand','1');}" +
             "if(document.getElementById('kn-sidebar-brand'))return;" +
             "var styleEl=document.createElement('style');styleEl.id='kn-sidebar-brand';" +
-            // Same two anchors in all three rules: the opener itself and the
-            // JS-marked anchor. The expanded sidebar keeps its own collapse
-            // button untouched — markBrand only ever marks the collapsed one.
+            // Three anchors in every rule: the opener, the JS-marked anchor, and
+            // — only while the shell says the sidebar is collapsed — a plain
+            // toggle. The last one is the safety net: if both attributes are
+            // missing on some screen the brand still lands on the leading
+            // button, while the expanded layout (data-kn-sb="open", or no
+            // attribute yet) keeps its own control untouched.
             "styleEl.textContent='html[data-kn-brand=\"1\"] [data-sidebar-opener],'+" +
-            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor]{width:auto!important;" +
-            "height:30px!important;padding:0 4px!important;}'+" +
+            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor],'+" +
+            "'html[data-kn-brand=\"1\"][data-kn-sb=\"closed\"] [data-sidebar-toggle]{" +
+            "width:auto!important;height:30px!important;padding:0 4px!important;}'+" +
             "'html[data-kn-brand=\"1\"] [data-sidebar-opener] svg,'+" +
-            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor] svg{display:none!important;}'+" +
+            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor] svg,'+" +
+            "'html[data-kn-brand=\"1\"][data-kn-sb=\"closed\"] [data-sidebar-toggle] svg{" +
+            "display:none!important;}'+" +
             "'html[data-kn-brand=\"1\"] [data-sidebar-opener]::after,'+" +
-            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor]::after{content:\"\";display:block;" +
-            "width:88px;height:24px;background:var(--kn-brand,none) center/contain no-repeat;}'+" +
+            "'html[data-kn-brand=\"1\"] [data-kn-brand-anchor]::after,'+" +
+            "'html[data-kn-brand=\"1\"][data-kn-sb=\"closed\"] [data-sidebar-toggle]::after{" +
+            "content:\"\";display:block;width:88px;height:24px;" +
+            "background:var(--kn-brand,none) center/contain no-repeat;}'+" +
             // Portrait: better-sidebar docks against the conversation column, which
             // is the full viewport on a phone; keep its panes inside the screen and
             // let the bottom workbench use the whole width under the IME.
@@ -220,21 +235,25 @@ public class MainActivity extends Activity {
             // Every "chrome" bar above a scrolling list paints itself with an
             // opaque token so content cannot show through while sticky:
             //   * the built-in plugin manager uses `.pageBar[data-natural]:before`
-            //     (the white band above 插件管理 / 插件市场);
-            //   * dshmarket uses `_stickyHead`, `_head` and `_cats`.
+            //     (the band above 已安装 / 插件市场 + the 刷新/＋/⌄ row);
+            //   * dshmarket uses `_stickyHead`, `_head` and `_cats`
+            //     (the 发现 / 主题 / 收藏 / 已安装 categories).
             //
-            // These MUST stay plain rgba(). An earlier revision used
-            // `color-mix(in srgb, var(--token) 82%, transparent)`, which reads
-            // nicely but is Chrome 111+: on a device whose WebView is older the
-            // declaration is dropped, the fallback `var(--token)` wins, and the
-            // bar comes back as FULLY OPAQUE white — "纯白，没有任何半透明效果".
-            // 82% rgba matches the settings panel's own `::before{opacity:.82}`
-            // exactly, so the bar and the panel have the same density.
+            // These are set to transparent, not to another translucent white.
+            // The settings panel already sits on its own
+            // `.VOzbGW_panel::before{background:var(--token);opacity:.82}`
+            // layer; another 82% white on top of an 82% white layer composites
+            // to 1-0.18*0.18 ≈ 96.8% — visually indistinguishable from solid
+            // white, which is exactly what "纯白，一点半透明都没有" described.
+            // Transparent lets the panel's own layer show through, so the bar
+            // and its surroundings become the same surface by construction.
+            // (Plain `transparent`, not color-mix(): that is Chrome 111+ and an
+            // older WebView silently drops the declaration.)
             "'[class*=\"_stickyHead\"],[class*=\"_stickyHead\"]::before,'+" +
-            "'[class*=\"_pageBar\"]::before,[class*=\"_pageBar\"]::after,'+" +
+            "'[class*=\"_pageBar\"]::before,'+" +
             "'[data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
             "'[data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
-            "background:rgba(255,255,255,.82)!important;}'+" +
+            "background:transparent!important;background-image:none!important;}'+" +
             // The settings panel already paints its own translucent layer:
             // `.VOzbGW_panel::before{position:absolute;inset:0;
             // background:var(--dsw-alias-bg-layer-2);opacity:.82}`. Adding a
@@ -242,15 +261,8 @@ public class MainActivity extends Activity {
             // the dialog drifted towards solid white. Hand the surface back to
             // upstream and let the ::before own the translucency.
             "'.VOzbGW_panel{background:transparent!important;}'+" +
-            // Dark theme: only the bars need an explicit colour. The panel is
-            // left to its own `::before`, whose token already flips with theme.
-            "'body[data-ds-dark-theme] [class*=\"_stickyHead\"],'+" +
-            "'body[data-ds-dark-theme] [class*=\"_stickyHead\"]::before,'+" +
-            "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::before,'+" +
-            "'body[data-ds-dark-theme] [class*=\"_pageBar\"]::after,'+" +
-            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_head\"],'+" +
-            "'body[data-ds-dark-theme] [data-dsh-market-plugins-tab] [class*=\"_cats\"]{'+" +
-            "background:rgba(26,26,29,.82)!important;}'+" +
+            // No dark-theme counterpart is needed: those bars are transparent in
+            // both schemes now, and the panel token behind them already flips.
             // dshmarket hides the settings <nav> on narrow screens with
             // [role=dialog]:has([data-dsh-market-root])>nav{display:none};
             // while its root is still in the DOM the section tabs stay gone
@@ -367,7 +379,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.39";
+    private static final String APP_VERSION = "1.0.40";
 
     private EngineService.Listener engineListener;
 
