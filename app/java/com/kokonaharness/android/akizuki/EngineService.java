@@ -1045,7 +1045,13 @@ public class EngineService extends Service {
         env.put("KOKONA_RUNTIME", runtimePath);
         env.put("TERMUX__PREFIX", runtimePath);
         env.put("TERMUX__ROOTFS", "/");
-        env.put("PATH", runtimePath + "/bin:/system/bin:/system/xbin");
+        // kokona-glibc/bin carries the prefix's own tools (kokona-grun, getent,
+        // iconv ...). Without it on PATH every skill's first command fails with
+        // "not found"; KOKONA_GLIBC pins the prefix for scripts that are run
+        // through a shell that did not inherit this environment.
+        env.put("KOKONA_GLIBC", runtimePath + "/kokona-glibc");
+        env.put("PATH", runtimePath + "/bin:" + runtimePath
+                + "/kokona-glibc/bin:/system/bin:/system/xbin");
         env.put("LD_LIBRARY_PATH", runtimePath + "/lib");
         env.put("TMPDIR", tmp.getAbsolutePath());
         env.put("TEMP", tmp.getAbsolutePath());

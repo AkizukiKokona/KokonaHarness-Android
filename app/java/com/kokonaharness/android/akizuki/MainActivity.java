@@ -402,7 +402,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.43";
+    private static final String APP_VERSION = "1.0.44rc1";
 
     private EngineService.Listener engineListener;
 

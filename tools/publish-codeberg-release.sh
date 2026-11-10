@@ -78,7 +78,10 @@ process.stdout.write(JSON.stringify({
   name: title,
   body: fs.readFileSync(notes, "utf8"),
   draft: false,
-  prerelease: false
+  // CB_PRERELEASE=1 publishes into the pre-release channel: visible on the
+  // releases page but never picked as "latest", which is what every rc build
+  // should use until it has been verified on a device.
+  prerelease: process.env.CB_PRERELEASE === "1"
 }));
 ' "$TAG" "$TITLE" "$1" > "$2"
 }

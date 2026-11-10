@@ -474,7 +474,11 @@ fi
 if [ -d "$GLIBC_SRC" ]; then
   rm -rf "$RT/kokona-glibc"
   mkdir -p "$RT/kokona-glibc"
-  cp -a "$GLIBC_SRC/." "$RT/kokona-glibc/"
+  # -L dereferences symlinks, and NOT --preserve=links: the device-side tar
+  # reader (TarExtractor) only materialises regular files and directories, so a
+  # symlink or hard link in the archive simply never appears on the phone.
+  # That is how lib/ld-linux-aarch64.so.1 went missing while bin/ld.so survived.
+  cp -rLp "$GLIBC_SRC/." "$RT/kokona-glibc/"
 else
   echo "WARNING: glibc staging missing ($GLIBC_SRC); runtime ships without kokona-glibc" >&2
 fi
