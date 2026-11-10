@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.0.44rc3**（146）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r34**
+> Android 8.1+ · arm64 · 当前 **1.0.44rc3**（146）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r37**
 
 ## 路线：从引擎到兼容层，全程不用 PRoot
 
@@ -47,7 +47,8 @@ DSH 的插件由两半组成：浏览器里的界面（client）和 Node 侧的�
 
 - 手机上跑的是 **DSH 引擎和工具环境**；真正动脑的模型请求仍发给你自己配置的服务方，需要联网、按你的账户计费。这里没有离线大模型，和其它 DSH 客户端一样。
 - 本项目是**社区第三方作品，与 DeepSeek 官方无关**；DSH 本身由 DeepSeek 开源。
-- 仓库已**公开**，[Release](../../releases/latest) 提供可直接安装的 APK，也可按下面的「构建」章节自行打包。设备要求 Android 8.1（API 27）及以上、**仅 arm64-v8a**。
+- 仓库已**公开**，[Release](../../releases/latest) 提供可直接安装的 APK，也可按下面的「构建」章节自行打包。设备要求 Android 8.1（API 27）及以上、**仅 arm64-v8a**。<br>
+  <sub><i>注：Android 10 以下内核版本过低，沙箱无法启动，只能使用完全权限运行，其余功能正常。</i></sub>
 - 让 AI 操作手机需要你主动开启无障碍等权限；不授权的话，它就是一个跑在手机里的 DSH，不涉及屏幕操控。
 - 仓库同时在 [GitHub](https://github.com/AkizukiKokona/KokonaHarness-Android) 与 [Codeberg](https://codeberg.org/AkizukiKokona/KokonaHarness-Android) 托管，代码、标签与发行说明两边同步；**两边都发布同名发行版**（Codeberg 侧用 `tools/publish-codeberg-release.sh` 同步，token 从 git 凭据管理器读取，可重复执行，也可用 `CB_REPO` 指定其它仓库）。Codeberg 有 1.5 GiB 的发行版附件配额，因此 **Codeberg 侧仅最新版本保留安装包附件**：更老版本只保留发行页面与说明，并指向 GitHub 同版本的安装包；**GitHub 侧附件不受影响、始终保留**。若配额临时不足，脚本会自动降级为「完整说明 + GitHub 下载链接 + SHA256」。
 
