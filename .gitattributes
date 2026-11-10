@@ -1,0 +1,13 @@
+# A fresh clone on Windows must still be able to run the build scripts: with
+# core.autocrlf=true every *.sh would arrive as CRLF and `bash build.sh` dies on
+# "\r: command not found" before the first line of real work. Pin the text
+# formats that are executed or parsed verbatim.
+*.sh   text eol=lf
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.java text eol=lf
+*.xml  text eol=lf
+*.json text eol=lf
