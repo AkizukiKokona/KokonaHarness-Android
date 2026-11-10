@@ -33,7 +33,7 @@
 - 本项目是**社区第三方作品，与 DeepSeek 官方无关**；DSH 本身由 DeepSeek 开源。
 - 仓库已**公开**，[Release](../../releases/latest) 提供可直接安装的 APK，也可按下面的「构建」章节自行打包。设备要求 Android 8.1（API 27）及以上、**仅 arm64-v8a**。
 - 让 AI 操作手机需要你主动开启无障碍等权限；不授权的话，它就是一个跑在手机里的 DSH，不涉及屏幕操控。
-- 仓库同时在 [GitHub](https://github.com/AkizukiKokona/KokonaHarness-Android) 与 [Codeberg](https://codeberg.org/AkizukiKokona/KokonaHarness-Android) 托管，代码、标签与发行说明两边同步；**两边都发布同名发行版**（Codeberg 侧用 `tools/publish-codeberg-release.sh` 同步，token 从 git 凭据管理器读取，可重复执行）。Codeberg 的发行版附件配额为 1.5 GiB，若已用满，Codeberg 发行页会给出 GitHub 上同一份 `KokonaHarness.apk` 的下载链接与 SHA256。
+- 仓库同时在 [GitHub](https://github.com/AkizukiKokona/KokonaHarness-Android) 与 [Codeberg](https://codeberg.org/AkizukiKokona/KokonaHarness-Android) 托管，代码、标签与发行说明两边同步；**两边都发布同名发行版**（Codeberg 侧用 `tools/publish-codeberg-release.sh` 同步，token 从 git 凭据管理器读取，可重复执行，也可用 `CB_REPO` 指定其它仓库）。Codeberg 有 1.5 GiB 的发行版附件配额，因此 **Codeberg 侧仅最新版本保留安装包附件**：更老版本只保留发行页面与说明，并指向 GitHub 同版本的安装包；**GitHub 侧附件不受影响、始终保留**。若配额临时不足，脚本会自动降级为「完整说明 + GitHub 下载链接 + SHA256」。
 
 ## 开始使用
 
