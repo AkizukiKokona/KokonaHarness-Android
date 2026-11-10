@@ -31,6 +31,14 @@ window.__ModuleLoader__.load({
       const b = bridge()
       try { return b === null ? null : JSON.parse(b.androidPermissions() || 'null') } catch (error) { return null }
     }
+    const updateInfo = () => {
+      const b = bridge()
+      try { return b === null ? null : JSON.parse(b.updateInfo() || '{}') } catch (error) { return null }
+    }
+    const text = (name, fallback) => {
+      const b = bridge()
+      try { return b === null ? fallback : String(b[name]() || fallback) } catch (error) { return fallback }
+    }
     const call = (name, ...args) => {
       const b = bridge()
       try { if (b !== null && typeof b[name] === 'function') b[name](...args) } catch (error) { console.warn(ID, name, error) }
@@ -55,7 +63,9 @@ window.__ModuleLoader__.load({
       '.khaSet_mode{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l4,#e3e3e8);border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:12px;line-height:18px;padding:3px 10px;cursor:pointer}',
       '.khaSet_mode_on{background:var(--dsw-alias-bg-module-platform,#eef2ff);border-color:#7c9cff}',
       '.khaSet_termbtn{box-sizing:border-box;width:28px;height:28px;border:1px solid var(--dsw-alias-border-l3,#d8d8de);border-radius:6px;background:transparent;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;cursor:pointer;padding:0}',
-      '.khaSet_termbtn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05))}'
+      '.khaSet_termbtn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05))}',
+      '.khaSet_notes{white-space:pre-wrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#666);max-height:180px;overflow-y:auto;background:rgba(127,127,127,.06);border-radius:8px;padding:8px 10px;margin:8px 0 0}',
+      '.khaSet_kv{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#666);margin:0 0 6px}'
     ].join('')
 
     const CAPS = [
@@ -150,14 +160,62 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // 检查更新：源可切换，默认 Codeberg；启动时 App 会自己查一次，这里用于手动
+    // 触发和查看结果。跳过某个版本由 App 持久化，重启后仍然有效。
+    function UpdateBlock() {
+      const info = usePoll(updateInfo, 2000)
+      const data = info || {}
+      const source = data.source === 'github' ? 'github' : 'codeberg'
+      const khaVersion = text('version', '?')
+      const dsh = text('dshVersion', '?')
+      let state
+      if (data.error) state = '检查失败：' + data.error + '（可切换更新源后重试）'
+      else if (!data.tag) state = '尚未检查'
+      else if (data.newer && data.skipped) state = '已跳过 ' + data.tag + '，出现更高版本时会再次提醒'
+      else if (data.newer) state = '发现新版本 ' + data.tag
+      else state = '已是最新版本（' + data.tag + '）'
+      return h('div', { className: 'khaSet_block' },
+        h('div', { className: 'khaSet_title' }, '检查更新'),
+        h('div', { className: 'khaSet_desc' }, '默认从 Codeberg 拉取版本信息，连不上时可以换成 GitHub。启动时会自动检查一次。'),
+        h('div', { className: 'khaSet_kv' }, '当前 KHA ' + khaVersion + ' · DSH ' + dsh),
+        h('div', { className: 'khaSet_row' },
+          h('button', {
+            type: 'button', key: 'cb',
+            className: 'khaSet_btn' + (source === 'codeberg' ? ' khaSet_on' : ''),
+            onClick: () => call('setUpdateSource', 'codeberg')
+          }, 'Codeberg'),
+          h('button', {
+            type: 'button', key: 'gh',
+            className: 'khaSet_btn' + (source === 'github' ? ' khaSet_on' : ''),
+            onClick: () => call('setUpdateSource', 'github')
+          }, 'GitHub')),
+        h('div', { className: 'khaSet_row' },
+          h('button', { type: 'button', className: 'khaSet_btn', onClick: () => call('checkUpdate') }, '立即检查'),
+          data.newer ? h('button', { type: 'button', key: 'show', className: 'khaSet_btn', onClick: () => call('showUpdate') }, '查看更新') : null,
+          data.newer ? h('button', { type: 'button', key: 'skip', className: 'khaSet_btn', onClick: () => call('skipUpdate', data.tag) }, '跳过 ' + data.tag) : null),
+        h('div', { className: 'khaSet_state' }, state),
+        data.newer && data.notes ? h('div', { className: 'khaSet_notes' }, data.notes) : null
+      )
+    }
+
     function AboutBlock() {
-      const b = bridge()
-      let version = '1.0.44rc2'
-      try { if (b !== null && typeof b.version === 'function') version = b.version() } catch (error) { /* keep fallback */ }
+      const info = usePoll(() => {
+        const b = bridge()
+        try { return JSON.parse(b.diagnosticsUi() || '{}') } catch (error) { return {} }
+      }, 3000)
       return h('div', { className: 'khaSet_block' },
         h('div', { className: 'khaSet_title' }, '关于 KHA'),
-        h('div', { className: 'khaSet_desc' }, 'KHA ' + version + ' · 本页由 kha-setthings 插件提供，不影响官方设置布局。'),
-        h('div', { className: 'khaSet_state' }, '工具链直接跑在 Android bionic 上；以 glibc 链接的程序由 kokona-grun 按需接住。终端入口在本页右上角。')
+        h('div', { className: 'khaSet_desc' }, 'KHA ' + text('version', '?') + ' · DSH ' + text('dshVersion', '?')
+          + ' · 本页由 kha-setthings 插件提供，不影响官方设置布局。'),
+        h('div', { className: 'khaSet_state' }, '工具链直接跑在 Android bionic 上；以 glibc 链接的程序由 kokona-grun 按需接住。终端入口在本页右上角。'),
+        h('div', { className: 'khaSet_kv' }, '界面透明度自检：' + (info.sheet
+          ? '样式表已注入 · 侧栏 ' + (info.drawerBg || '未渲染') + ' / 模糊 ' + (info.drawerFilter || '无')
+            + ' · 设置 ' + (info.panelBg || '未渲染') + ' / ' + (info.panelFilter || '无')
+            + ' · 支持 backdrop-filter：' + (info.blur ? '是' : '否')
+          : '样式表未注入')),
+        h('div', { className: 'khaSet_row', style: { marginTop: '10px' } },
+          h('button', { type: 'button', className: 'khaSet_btn', onClick: () => call('toast', '已请求一次界面自检，稍后回来看这一行') }, '刷新自检'),
+          h('button', { type: 'button', className: 'khaSet_btn', onClick: () => call('setWebDebug', true) }, '开启界面调试'))
       )
     }
 
@@ -172,6 +230,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'khaSet' },
         h(RunModeBlock, { key: 'run' }),
         h(PermissionsBlock, { key: 'perm' }),
+        h(UpdateBlock, { key: 'update' }),
         h(AboutBlock, { key: 'about' }))
     }
 

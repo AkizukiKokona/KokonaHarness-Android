@@ -92,6 +92,33 @@ fi
 # a bionic command with a glibc one. Anything that does want the bare names can
 # still run "$G/bin/<tool>" or pass --library-path itself.
 
+# A resolver line is only useful if it is well formed: a junk value is worse
+# than no value because glibc then fails lookups with a vague error instead of
+# falling through to the next server. Accept dotted-quad IPv4 (each octet
+# 0-255) and IPv6 (hex groups, at least two colons, optional v4 tail).
+kn_ip() {
+  case "$1" in
+    *:*:*)
+      case "$1" in *[!0-9a-fA-F:.]*) return 1 ;; esac
+      [ ${#1} -le 45 ] || return 1
+      return 0
+      ;;
+  esac
+  case "$1" in *[!0-9.]*) return 1 ;; esac
+  case "$1" in *.*.*.*) ;; *) return 1 ;; esac
+  r=${1#*.}; o1=${1%%.*}
+  o2=${r%%.*}; r=${r#*.}
+  o3=${r%%.*}; o4=${r#*.}
+  case "$o4" in *.* | '') return 1 ;; esac
+  for octet in "$o1" "$o2" "$o3" "$o4"; do
+    [ -n "$octet" ] || return 1
+    [ ${#octet} -le 3 ] || return 1
+    [ "$octet" -ge 0 ] 2>/dev/null || return 1
+    [ "$octet" -le 255 ] || return 1
+  done
+  return 0
+}
+
 # Refresh DNS for this run. glibc cannot resolve without a nameserver line, and
 # Android 10+ no longer publishes net.dns*: the app writes the live resolver
 # list to etc/dns.servers, then props, then a public fallback.
@@ -99,16 +126,34 @@ fi
 # every network change, which is the only source that works on Android 10+ (the
 # net.dns* props are not published there). getprop stays as a fallback for older
 # devices that still have them.
+# Every line has to be exactly "nameserver <ipv4|ipv6>". The app writes this
+# file from the system resolver list, but a half-written line, a comment or a
+# stray "garbage line" used to go into resolv.conf verbatim and could make the
+# resolver refuse to start. Validate each line instead of copying the file.
 ns=""
 if [ -s "$G/etc/dns.servers" ]; then
-  ns=$(cat "$G/etc/dns.servers" 2>/dev/null)
+  while IFS= read -r line; do
+    line=$(printf '%s' "$line" | tr -d '\r')
+    case "$line" in
+      nameserver\ *) ip=${line#nameserver } ;;
+      *) continue ;;
+    esac
+    # No extra tokens, no trailing junk.
+    case "$ip" in *" "*) continue ;; esac
+    kn_ip "$ip" || continue
+    if [ -z "$ns" ]; then ns="nameserver $ip"; else ns="$ns
+nameserver $ip"; fi
+  done < "$G/etc/dns.servers"
 fi
 if [ -z "$ns" ]; then
-  for p in net.dns1 net.dns2 net.dns3 net.dns4; do
-    v=$(getprop "$p" 2>/dev/null)
+  for prop in net.dns1 net.dns2 net.dns3 net.dns4; do
+    v=$(getprop "$prop" 2>/dev/null)
     case "$v" in
       '' | *[!0-9a-fA-F.:]*) ;;
-      *) ns="$ns nameserver $v" ;;
+      *)
+        if [ -z "$ns" ]; then ns="nameserver $v"; else ns="$ns
+nameserver $v"; fi
+        ;;
     esac
   done
 fi
@@ -154,6 +199,27 @@ RT="$(dirname "$G")"
 LOCAL_LIB="$HOME/.local/lib/kokona-glibc"
 LP="$G/lib"
 [ -d "$LOCAL_LIB" ] && LP="$LP:$LOCAL_LIB"
+
+# Friendly entry points. Without these the loader answers with its own usage
+# dump, which reads like a crash to anyone who typed `kokona-grun --version`.
+case "${1:-}" in
+  -h | --help)
+    printf '%s\n' \
+      "kokona-grun — run a glibc-linked arm64 program on the bundled glibc prefix" \
+      "" \
+      "usage: kokona-grun [--] <program> [args...]" \
+      "       kokona-grun --version | --help" \
+      "" \
+      "<program> must be a path (./x or /abs/x); the loader does not search PATH." \
+      "glibc tools are available as kiconv, kgetent, kgetconf, klocale, kldd." \
+      "prefix: $G"
+    exit 0
+    ;;
+  -V | --version)
+    printf 'kokona-grun (KokonaRuntime) glibc prefix %s\n' "$G"
+    exit 0
+    ;;
+esac
 
 if [ "$1" = "--" ]; then shift; fi
 exec "$G/lib/ld-linux-aarch64.so.1" --library-path "$LP" "$@"

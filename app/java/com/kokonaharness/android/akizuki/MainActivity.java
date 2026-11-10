@@ -267,19 +267,33 @@ public class MainActivity extends Activity {
             // Without the blur the translucent drawer sits on top of the home
             // page at the same brightness and the two read as one surface —
             // which is exactly what was reported.
-            "'[data-sidebar-drawer] .pI_x6G_sidebarCol{background:rgba(255,255,255,.72)!important;" +
-            "-webkit-backdrop-filter:blur(14px) saturate(115%)!important;" +
-            "backdrop-filter:blur(14px) saturate(115%)!important;}'+" +
+            // A 72%-white sheet over a white page is white: alpha alone cannot
+            // read as translucency when the thing behind it has the same
+            // brightness, which is why the drawer still looked opaque. Two
+            // changes make the effect visible instead of nominal:
+            //   * the fill is tinted cool and dropped to 58%, so it differs from
+            //     the page even where the page is empty;
+            //   * the drawer's own mask is dimmed and blurred, so the content
+            //     behind is visibly *behind glass* rather than just dimmer.
+            "'[data-sidebar-drawer] .pI_x6G_sidebarCol{background:rgba(246,247,252,.58)!important;" +
+            "-webkit-backdrop-filter:blur(22px) saturate(150%)!important;" +
+            "backdrop-filter:blur(22px) saturate(150%)!important;" +
+            "box-shadow:0 8px 32px rgba(15,17,26,.18)!important;}'+" +
+            "'[data-sidebar-drawer] .pI_x6G_drawerMask{background:rgba(12,14,22,.26)!important;" +
+            "-webkit-backdrop-filter:blur(2px)!important;backdrop-filter:blur(2px)!important;}'+" +
             // The drawer leaves the app's own backdrop visible, so the dark
             // palette needs its own fill; the blur itself is colour-neutral.
             "'body[data-ds-dark-theme] .pI_x6G_frame[data-sidebar-drawer] " +
-            ".pI_x6G_sidebarCol{background:rgba(24,24,27,.72)!important;}'+" +
+            ".pI_x6G_sidebarCol{background:rgba(22,23,28,.58)!important;}'+" +
+            "'body[data-ds-dark-theme] [data-sidebar-drawer] .pI_x6G_drawerMask{" +
+            "background:rgba(0,0,0,.42)!important;}'+" +
             "'[role=\"dialog\"] .VOzbGW_panel,[aria-modal=\"true\"] .VOzbGW_panel{" +
-            "-webkit-backdrop-filter:blur(14px)!important;backdrop-filter:blur(14px)!important;}'+" +
+            "-webkit-backdrop-filter:blur(22px) saturate(140%)!important;" +
+            "backdrop-filter:blur(22px) saturate(140%)!important;}'+" +
             // The panel paints its surface with ::before at 82%; dropping it to
             // 70% is what lets the blurred backdrop read through instead of
             // being covered by a near-opaque sheet.
-            "'.VOzbGW_panel::before{opacity:.7!important;}'+" +
+            "'.VOzbGW_panel::before{opacity:.58!important;}'+" +
             // No dark-theme counterpart is needed: those bars are transparent in
             // both schemes now, and the panel token behind them already flips.
             // dshmarket hides the settings <nav> on narrow screens with
@@ -333,6 +347,30 @@ public class MainActivity extends Activity {
             "window.__KOKONA_SYNC_SB__=function(){observeSb();syncSb();fitDock();" +
             "window.__KOKONA_APPLY_BRAND__();};" +
             "window.__KOKONA_SYNC_SB__();setTimeout(window.__KOKONA_SYNC_SB__,600);" +
+            // Report the computed values of the two surfaces this shim styles.
+            // Without it, "the panel is still opaque" is a symptom that takes a
+            // remote debugger to turn into a cause; with it the settings page can
+            // print the actual background/backdrop-filter and the answer is one
+            // glance away. Re-runs on a timer because the drawer only exists some
+            // of the time.
+            "window.__KOKONA_UI_PROBE__=function(){try{" +
+            "var cs=window.getComputedStyle;" +
+            "var dr=document.querySelector('[data-sidebar-drawer] .pI_x6G_sidebarCol')||" +
+            "document.querySelector('.pI_x6G_sidebarCol');" +
+            "var pn=document.querySelector('.VOzbGW_panel');" +
+            "var body=document.body||document.documentElement;" +
+            "var out={sheet:!!document.getElementById('kn-sidebar-brand')," +
+            "blur:(window.CSS&&CSS.supports)?CSS.supports('backdrop-filter','blur(1px)'):false," +
+            "dark:!!(body&&body.hasAttribute)&&body.hasAttribute('data-ds-dark-theme')," +
+            "drawerBg:dr?cs(dr).backgroundColor:''," +
+            "drawerFilter:dr?((cs(dr).backdropFilter||cs(dr).webkitBackdropFilter)||''):''," +
+            "panelBg:pn?cs(pn).backgroundColor:''," +
+            "panelFilter:pn?((cs(pn).backdropFilter||cs(pn).webkitBackdropFilter)||''):''," +
+            "panelBefore:pn?cs(pn,'::before').opacity:''};" +
+            "if(window.KokonaBridge&&KokonaBridge.uiProbe)KokonaBridge.uiProbe(JSON.stringify(out));" +
+            "}catch(e){}};" +
+            "setTimeout(window.__KOKONA_UI_PROBE__,2500);" +
+            "setInterval(window.__KOKONA_UI_PROBE__,4000);" +
             // No permanent timer here. The observers above already fire on the
             // mutations that matter, and a 1.2s poll re-ran the dialog scan — and
             // with it a forced layout — forever, which fought the sidebar's own
@@ -391,6 +429,19 @@ public class MainActivity extends Activity {
     private View authClose;
     private TerminalOverlay terminalOverlay;
 
+    // Boot screen: the two version lines and the two-tier notice list. The
+    // hierarchy rule lives in BootNotices (one headline, everything else quiet).
+    private TextView versionsText;
+    private TextView primaryText;
+    private Button primaryAction;
+    private TextView secondaryToggle;
+    private LinearLayout secondaryBox;
+    private BootNotices bootNotices = new BootNotices();
+    private boolean noticesExpanded;
+
+    /** Set when the user picked accessibility mode but had to grant it first. */
+    private boolean pendingAccessibilityMode;
+
     private final Handler ui = new Handler(Looper.getMainLooper());
     private ValueCallback<Uri[]> fileCallback;
     private String pickRequestId;
@@ -402,9 +453,17 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    private static final String APP_VERSION = "1.0.44rc2";
+    static final String APP_VERSION = "1.0.44rc3";
 
     private EngineService.Listener engineListener;
+
+    /**
+     * Last CSS probe reported by the shim. Kept so the settings page can show
+     * whether a rule was applied instead of asking the user to describe the
+     * screen -- "the panel is not translucent" is a symptom, the computed
+     * background is the diagnosis.
+     */
+    private static volatile String uiProbe = "";
 
     /** Shizuku returns the grant on a binder thread; only reboot the engine on a real channel change. */
     private final Shizuku.OnRequestPermissionResultListener shizukuPermissionListener =
@@ -430,7 +489,12 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         // Allows measuring the real page from adb during development. Gated on the
         // debuggable flag so a release build never exposes its WebView.
-        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+        // Allows inspecting the page from chrome://inspect. A release build is
+        // not debuggable, which made this unreachable exactly when it was needed
+        // (a rendering bug that only shows on a real device). Settings can turn
+        // it on explicitly; the default is still off.
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                || getSharedPreferences("kha", MODE_PRIVATE).getBoolean("web_debug", false)) {
             WebView.setWebContentsDebuggingEnabled(true);
         }
         ConfirmationGate.attach(this);
@@ -459,6 +523,188 @@ public class MainActivity extends Activity {
         EngineService.start(this);
 
         applyState(EngineService.current());
+        maybeCheckUpdates();
+    }
+
+    /** DSH release bundled in the runtime, e.g. "0.2.2-rc.1". */
+    private static String dshVersion() {
+        return RuntimeInstaller.dshVersion();
+    }
+
+    /**
+     * Builds the two-tier notice list for the current state.
+     *
+     * <p>Order matters only until the first primary is taken: BootNotices demotes
+     * every later primary to the secondary list, so the headline is always a
+     * single item even if several blocking conditions are true at once.</p>
+     */
+    private void refreshBootNotices(EngineService.Snapshot snapshot) {
+        BootNotices notices = new BootNotices();
+        if (snapshot != null && (snapshot.state == EngineService.State.ERROR
+                || snapshot.state == EngineService.State.STOPPED)) {
+            notices.primary("引擎未运行，KHA 现在无法接收任务", "重试", new Runnable() {
+                @Override
+                public void run() {
+                    EngineService.restart(MainActivity.this);
+                }
+            });
+        }
+        if (RunMode.ACCESSIBILITY.equals(RunMode.mode(this))
+                && !RunMode.isAccessibilityEnabled(this)) {
+            notices.primary("已选无障碍模式，但无障碍服务未开启", "去开启", new Runnable() {
+                @Override
+                public void run() {
+                    RunMode.openAccessibilitySettings(MainActivity.this);
+                }
+            });
+        }
+        UpdateChecker.Result update = UpdateChecker.cached();
+        if (update.newer && !update.skipped) {
+            notices.secondary("KHA " + update.tag + " 可用", "查看", new Runnable() {
+                @Override
+                public void run() {
+                    showUpdateDialog();
+                }
+            });
+        }
+        if (!RunMode.isAccessibilityEnabled(this)) {
+            notices.secondary("无障碍服务未开启：界面自动化与截图不可用");
+        }
+        if (softwareRenderingPreferred()) {
+            notices.secondary("当前为软件渲染，画面更稳但滑动稍慢");
+        }
+        bootNotices = notices;
+        renderBootNotices();
+    }
+
+    private void renderBootNotices() {
+        if (primaryText == null) return;
+        BootNotices.Item headline = bootNotices.headline();
+        if (headline == null) {
+            primaryText.setVisibility(View.GONE);
+            primaryAction.setVisibility(View.GONE);
+        } else {
+            primaryText.setVisibility(View.VISIBLE);
+            primaryText.setText(headline.text);
+            if (headline.hasAction()) {
+                primaryAction.setVisibility(View.VISIBLE);
+                primaryAction.setText(headline.actionLabel);
+                primaryAction.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        headline.action.run();
+                    }
+                });
+            } else {
+                primaryAction.setVisibility(View.GONE);
+            }
+        }
+        final java.util.List<BootNotices.Item> secondary = bootNotices.secondaryItems();
+        secondaryBox.removeAllViews();
+        secondaryToggle.setVisibility(secondary.isEmpty() ? View.GONE : View.VISIBLE);
+        secondaryBox.setVisibility(secondary.isEmpty() || !noticesExpanded
+                ? View.GONE : View.VISIBLE);
+        if (!secondary.isEmpty()) {
+            secondaryToggle.setText(noticesExpanded
+                    ? "收起提示" : "还有 " + secondary.size() + " 条提示");
+            for (final BootNotices.Item item : secondary) {
+                TextView row = new TextView(this);
+                row.setText("·  " + item.text);
+                row.setTextColor(0xff9d968a);
+                row.setTextSize(12);
+                row.setGravity(Gravity.CENTER);
+                row.setPadding(dp(4), dp(3), dp(4), dp(3));
+                if (item.hasAction()) {
+                    row.setTextColor(0xffb9b2a2);
+                    row.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            item.action.run();
+                        }
+                    });
+                }
+                secondaryBox.addView(row);
+            }
+        }
+        if (versionsText != null) {
+            versionsText.setText("KHA 版本 " + APP_VERSION + "\nDSH 版本 " + dshVersion());
+        }
+    }
+
+    /**
+     * Startup update check. Silent when nothing is newer, when the user skipped
+     * that tag, or when the network is unreachable -- an update must never be the
+     * reason the app looks broken.
+     */
+    private void maybeCheckUpdates() {
+        boolean auto = getSharedPreferences("kha_update", MODE_PRIVATE)
+                .getBoolean("auto", true);
+        if (!auto) return;
+        UpdateChecker.checkAsync(this, APP_VERSION, false, new Runnable() {
+            @Override
+            public void run() {
+                UpdateChecker.Result result = UpdateChecker.cached();
+                refreshBootNotices(EngineService.current());
+                if (result.newer && !result.skipped) {
+                    showUpdateDialog();
+                }
+            }
+        });
+    }
+
+    private String updateSourceLabel() {
+        return UpdateChecker.SOURCE_GITHUB.equals(UpdateChecker.source(this))
+                ? "GitHub" : "Codeberg";
+    }
+
+    /** The notice dialog: notes first, then exactly three choices. */
+    private void showUpdateDialog() {
+        final UpdateChecker.Result result = UpdateChecker.cached();
+        if (result.tag == null || result.tag.isEmpty()) return;
+        String notes = result.notes == null ? "" : result.notes.trim();
+        if (notes.length() > 1400) notes = notes.substring(0, 1400) + "…";
+        String message = (notes.isEmpty() ? "本次更新没有附加说明。" : notes)
+                + "\n\n当前 " + APP_VERSION + " → " + result.tag
+                + "（" + updateSourceLabel() + "）";
+        new AlertDialog.Builder(this)
+                .setTitle(Notices.TITLE)
+                .setMessage(message)
+                .setPositiveButton("立即更新", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        openUrlExternally(result.assetUrl);
+                    }
+                })
+                .setNegativeButton("暂不更新", null)
+                .setNeutralButton("跳过这个版本", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        UpdateChecker.skip(MainActivity.this, result.tag);
+                        ToastCompat.show(MainActivity.this, "已跳过 " + result.tag);
+                        refreshBootNotices(EngineService.current());
+                    }
+                })
+                .show();
+    }
+
+    /** Opens an http(s) link in whatever browser the device has. */
+    private void openUrlExternally(String url) {
+        if (url == null) return;
+        final String target = url.trim();
+        if (!target.startsWith("http://") && !target.startsWith("https://")) return;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(target));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                } catch (Exception error) {
+                    Toast.makeText(MainActivity.this, "无法打开浏览器，请复制链接后手动访问",
+                            Toast.LENGTH_LONG).show();
+                }
+            }
+        });
     }
 
     private void buildViews() {
@@ -493,6 +739,20 @@ public class MainActivity extends Activity {
         logoLp.bottomMargin = dp(16);
         overlay.addView(logo, logoLp);
 
+        // Two version lines, side by side in the same block. They answer two
+        // different questions -- which KHA build is installed, and which DSH
+        // runtime it bundles -- so neither may replace the other.
+        versionsText = new TextView(this);
+        versionsText.setTextColor(0xffcfc7b6);
+        versionsText.setTextSize(12);
+        versionsText.setGravity(Gravity.CENTER);
+        versionsText.setLineSpacing(dp(3), 1f);
+        versionsText.setText("KHA 版本 " + APP_VERSION + "\nDSH 版本 " + dshVersion());
+        LinearLayout.LayoutParams versionsLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        versionsLp.bottomMargin = dp(10);
+        overlay.addView(versionsText, versionsLp);
+
         progress = new ProgressBar(this);
         progress.setIndeterminate(true);
         progress.setIndeterminateTintList(
@@ -517,6 +777,52 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusLp.topMargin = dp(12);
         overlay.addView(statusText, statusLp);
+
+        // Primary notice: the one thing that needs a decision right now. It is
+        // the only element here with the accent colour and a large size, so a
+        // secondary hint can never read as equally urgent.
+        primaryText = new TextView(this);
+        primaryText.setVisibility(View.GONE);
+        primaryText.setTextColor(0xfff0c96a);
+        primaryText.setTextSize(15);
+        primaryText.setGravity(Gravity.CENTER);
+        primaryText.setPadding(dp(4), dp(14), dp(4), 0);
+        LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        overlay.addView(primaryText, primaryLp);
+
+        primaryAction = new Button(this);
+        primaryAction.setVisibility(View.GONE);
+        LinearLayout.LayoutParams primaryActionLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        primaryActionLp.topMargin = dp(6);
+        overlay.addView(primaryAction, primaryActionLp);
+
+        // Secondary notices stay collapsed behind a count, so the screen never
+        // becomes a wall of equally loud lines.
+        secondaryToggle = new TextView(this);
+        secondaryToggle.setVisibility(View.GONE);
+        secondaryToggle.setTextColor(0xff9d968a);
+        secondaryToggle.setTextSize(12);
+        secondaryToggle.setGravity(Gravity.CENTER);
+        secondaryToggle.setPadding(dp(4), dp(10), dp(4), dp(2));
+        secondaryToggle.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                noticesExpanded = !noticesExpanded;
+                renderBootNotices();
+            }
+        });
+        overlay.addView(secondaryToggle);
+
+        secondaryBox = new LinearLayout(this);
+        secondaryBox.setOrientation(LinearLayout.VERTICAL);
+        secondaryBox.setVisibility(View.GONE);
+        secondaryBox.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams secondaryLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        secondaryLp.topMargin = dp(4);
+        overlay.addView(secondaryBox, secondaryLp);
 
         retryButton = new Button(this);
         retryButton.setText(R.string.retry);
@@ -738,6 +1044,7 @@ public class MainActivity extends Activity {
     }
 
     private void applyState(EngineService.Snapshot snapshot) {
+        refreshBootNotices(snapshot);
         switch (snapshot.state) {
             case INSTALLING:
                 overlay.setVisibility(View.VISIBLE);
@@ -1188,6 +1495,17 @@ public class MainActivity extends Activity {
             pendingPickResult = null;
             deliverPick(script);
         }
+        // Coming back from the system accessibility page: apply the mode the user
+        // actually asked for, now that the service is on. If they did not grant
+        // it, nothing changes and no extra dialog appears (they just said no).
+        if (pendingAccessibilityMode) {
+            pendingAccessibilityMode = false;
+            if (RunMode.isAccessibilityEnabled(this)) {
+                RunMode.setMode(this, RunMode.ACCESSIBILITY);
+                ToastCompat.show(this, "已切换到无障碍模式");
+                refreshBootNotices(EngineService.current());
+            }
+        }
     }
 
     @Override
@@ -1213,6 +1531,85 @@ public class MainActivity extends Activity {
 
     /** JS bridge: directory picking plus the native terminal sheet opener. */
     private class Bridge {
+        /** Snapshot the 检查更新 page polls. */
+        @JavascriptInterface
+        public String updateInfo() {
+            return UpdateChecker.cached().toJson(
+                    APP_VERSION,
+                    UpdateChecker.source(MainActivity.this),
+                    UpdateChecker.lastError(),
+                    getSharedPreferences("kha_update", MODE_PRIVATE).getBoolean("auto", true));
+        }
+
+        @JavascriptInterface
+        public void setUpdateSource(final String source) {
+            UpdateChecker.setSource(MainActivity.this, source);
+            UpdateChecker.checkAsync(MainActivity.this, APP_VERSION, true, new Runnable() {
+                @Override
+                public void run() {
+                    refreshBootNotices(EngineService.current());
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void checkUpdate() {
+            UpdateChecker.checkAsync(MainActivity.this, APP_VERSION, true, new Runnable() {
+                @Override
+                public void run() {
+                    refreshBootNotices(EngineService.current());
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void setAutoUpdate(final boolean enabled) {
+            getSharedPreferences("kha_update", MODE_PRIVATE).edit()
+                    .putBoolean("auto", enabled).apply();
+        }
+
+        @JavascriptInterface
+        public void skipUpdate(final String tag) {
+            UpdateChecker.skip(MainActivity.this, tag);
+            refreshBootNotices(EngineService.current());
+        }
+
+        @JavascriptInterface
+        public void showUpdate() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    showUpdateDialog();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void openUpdatePage() {
+            UpdateChecker.Result result = UpdateChecker.cached();
+            String url = result.assetUrl != null && !result.assetUrl.isEmpty()
+                    ? result.assetUrl : result.pageUrl;
+            if (url != null && !url.isEmpty()) openExternal(url);
+        }
+
+        @JavascriptInterface
+        public void setWebDebug(final boolean enabled) {
+            getSharedPreferences("kha", MODE_PRIVATE).edit()
+                    .putBoolean("web_debug", enabled).apply();
+            ToastCompat.show(MainActivity.this, enabled ? "已开启界面调试，重启后生效" : "已关闭界面调试");
+        }
+
+        @JavascriptInterface
+        public String diagnosticsUi() {
+            return uiProbe;
+        }
+
+        /** Filled by the shim: what the page actually computed for our rules. */
+        @JavascriptInterface
+        public void uiProbe(final String payload) {
+            uiProbe = payload == null ? "" : payload;
+        }
+
         @JavascriptInterface
         public void openTerminal() {
             runOnUiThread(new Runnable() {
@@ -1244,27 +1641,18 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void openExternal(final String url) {
-            if (url == null) return;
-            final String target = url.trim();
-            if (!target.startsWith("http://") && !target.startsWith("https://")) return;
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(target));
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(intent);
-                    } catch (Exception error) {
-                        Toast.makeText(MainActivity.this, "无法打开浏览器，请复制链接后手动访问",
-                                Toast.LENGTH_LONG).show();
-                    }
-                }
-            });
+            openUrlExternally(url);
         }
 
         @JavascriptInterface
         public String version() {
             return APP_VERSION;
+        }
+
+        /** Bundled DSH release, shown next to the KHA version. */
+        @JavascriptInterface
+        public String dshVersion() {
+            return RuntimeInstaller.dshVersion();
         }
 
         /** Sandbox availability for the permission-preset UI. */
@@ -1316,9 +1704,61 @@ public class MainActivity extends Activity {
             AndroidPermissions.reset(MainActivity.this);
         }
 
+        /**
+         * Mode switching is tiered by what it grants, not by the fact that it
+         * changes something.
+         *
+         * <ul>
+         *   <li>back to normal: takes privileges away, applies immediately and
+         *       never asks -- a confirmation here was pure friction;</li>
+         *   <li>accessibility: only meaningful once the service is on, so an
+         *       unprivileged user is sent to grant it instead of quietly getting
+         *       a mode that cannot do anything;</li>
+         *   <li>advanced: hands the engine Root/Shizuku, so this one confirms.</li>
+         * </ul>
+         */
         @JavascriptInterface
         public void setRunMode(final String mode) {
-            if (!confirmSensitive("切换到运行模式「" + mode + "」？")) return;
+            if (!RunMode.NORMAL.equals(mode) && !RunMode.ACCESSIBILITY.equals(mode)
+                    && !RunMode.ADVANCED.equals(mode)) {
+                return;
+            }
+            if (RunMode.NORMAL.equals(mode)) {
+                applyRunMode(mode);
+                return;
+            }
+            if (RunMode.ACCESSIBILITY.equals(mode)) {
+                if (!RunMode.isAccessibilityEnabled(MainActivity.this)) {
+                    requestAccessibilityForMode();
+                    return;
+                }
+                applyRunMode(mode);
+                return;
+            }
+            if (!confirmSensitive("高级模式会通过 Root/Shizuku 执行命令，切换后引擎会重启。继续？")) {
+                return;
+            }
+            applyRunMode(mode);
+        }
+
+        private void requestAccessibilityForMode() {
+            new AlertDialog.Builder(MainActivity.this)
+                    .setTitle("需要先开启无障碍服务")
+                    .setMessage("无障碍模式依赖系统无障碍服务。开启并返回后会自动切换到该模式；现在仍按普通模式运行。")
+                    .setPositiveButton("去开启",
+                            new android.content.DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(android.content.DialogInterface dialog,
+                                                    int which) {
+                                    pendingAccessibilityMode = true;
+                                    RunMode.openAccessibilitySettings(MainActivity.this);
+                                }
+                            })
+                    .setNegativeButton("取消", null)
+                    .show();
+        }
+
+        private void applyRunMode(final String mode) {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -1339,6 +1779,7 @@ public class MainActivity extends Activity {
                         if (!currentChannel.equals(previousChannel)) {
                             EngineService.restart(MainActivity.this);
                         }
+                        refreshBootNotices(EngineService.current());
                     }
                 }
             });

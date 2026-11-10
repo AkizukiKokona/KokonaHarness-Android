@@ -1265,7 +1265,7 @@ public class EngineService extends Service {
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
                 "引擎状态", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("KokonaHarness 引擎运行状态");
+        channel.setDescription("KHA 引擎运行状态");
         channel.setShowBadge(false);
         manager.createNotificationChannel(channel);
     }

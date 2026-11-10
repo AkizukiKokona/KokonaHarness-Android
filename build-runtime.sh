@@ -496,7 +496,15 @@ if [ -d "$GLIBC_SRC" ]; then
 d=\$(dirname "\$0")
 if [ -n "\${KOKONA_GLIBC:-}" ]; then G="\$KOKONA_GLIBC"; else G="\$d/../kokona-glibc"; fi
 [ -x "\$G/lib/ld-linux-aarch64.so.1" ] || { echo "k$tool: glibc runtime missing at \$G" >&2; exit 127; }
-exec "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$G/lib:\$HOME/.local/lib/kokona-glibc" "\$G/bin/$tool" "\$@"
+LIBPATH="\$G/lib:\$HOME/.local/lib/kokona-glibc"
+# ldd is a shell script, not an ELF: exec'ing it through the loader fails with
+# "invalid ELF header". Run it with the shell (its own shebang cannot be used on
+# Android) and hand the extra library directory down through the environment,
+# because the --library-path above only reaches the process we start ourselves.
+if [ "$tool" = ldd ]; then
+  LD_LIBRARY_PATH="\$LIBPATH" exec /system/bin/sh "\$G/bin/ldd" "\$@"
+fi
+exec "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$LIBPATH" "\$G/bin/$tool" "\$@"
 EOS
     chmod 755 "$RT/bin/k$tool"
   done

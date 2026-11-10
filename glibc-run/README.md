@@ -93,3 +93,17 @@ KokonaHarness 只在需要跑 glibc 程序时才用这套前缀，bionic 仍是�
    现在改成**前缀别名**：`kiconv / kgetent / kgetconf / klocale / kldd / kgencat / kpldd`
    放在 `KokonaRuntime/bin`（外加 `kokona-grun` 本体，它按自身位置推导前缀），
    `kokona-glibc/bin` 不再进 PATH，两个命名空间结构上不可能重叠。
+
+11. **`ldd` 是脚本，不能经 loader 启动**
+    `kokona-glibc/bin/ldd` 是 `#!/system/bin/sh` 的纯脚本（Android 没有 `/bin/bash`），
+    而 `kldd` 包装器早期把它当 ELF 交给 loader：`error while loading shared libraries:
+    ... invalid ELF header`。修法是 `exec /system/bin/sh "$G/bin/ldd" "$@"`。
+    另外 `--library-path` 只对包装器自己启动的进程有效，ldd 内部还会再 exec 一次 loader，
+    所以补的库目录要**同时**通过 `LD_LIBRARY_PATH` 传下去。
+
+12. **resolv.conf：一行一条，且逐行校验**
+    glibc 的 resolver 按行解析，`nameserver 1.1.1.1 nameserver 8.8.8.8` 只会取第一个——
+    之前多个 DNS 被拼成一行，等于只有第一个服务器生效。现在每条一行。
+    `etc/dns.servers` 是 App 写的，不能整段照抄：加注释、半截行、`garbage line` 都会进
+    resolver。逐行校验 `nameserver` + 合法 IPv4（四段 0-255）/IPv6（≥2 个冒号），
+    全部无效时回落 `getprop net.dns1-4`，再回落公共 DNS。

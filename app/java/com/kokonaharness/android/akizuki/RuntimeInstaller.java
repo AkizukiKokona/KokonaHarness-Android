@@ -26,7 +26,19 @@ public final class RuntimeInstaller {
     // pre-plugin settings UI inside it, so devices that installed it kept that
     // tree and our later kha-setthings bundle ended up layered on top of the
     // old files. r34 forces the one full re-extract that clears the overlap.
-    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r36";
+    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r37";
+
+    /**
+     * The DSH release inside the runtime, without the packaging suffix: the boot
+     * screen shows this next to the KHA version, and they are two different
+     * things (app build vs. bundled engine).
+     */
+    public static String dshVersion() {
+        String value = RUNTIME_VERSION;
+        if (value.startsWith("dsh-")) value = value.substring(4);
+        int suffix = value.lastIndexOf("-r");
+        return suffix > 0 ? value.substring(0, suffix) : value;
+    }
 
     public interface Progress {
         void onProgress(float fraction, String message);

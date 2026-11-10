@@ -56,7 +56,7 @@ kgetconf LONG_BIT                # ✓ 推荐：用 k 前缀启动器
 | `kgetent` | getent（hosts / services / protocols / networks 均可查） |
 | `kgetconf` | getconf |
 | `klocale` | locale |
-| `kldd` | ldd（列出动态依赖） |
+| `kldd` | ldd（列出动态依赖；内部走 `/system/bin/sh`，并把 `~/.local/lib/kokona-glibc` 通过 `LD_LIBRARY_PATH` 传下去，所以补的库也能看到） |
 | `kgencat` | gencat |
 | `kpldd` | pldd（列出进程加载的共享库） |
 
@@ -86,7 +86,8 @@ $BUILD_TMP/llvm-readelf -d ./binary 2>/dev/null || readelf -d ./binary | grep NE
 - `iconv` 的 CJK 编码可用：`printf '世界
 ' | kiconv -f UTF-8 -t EUC-KR`。前提是打包时把 `gconv-modules.d/gconv-modules-extra.conf` 的注册表并进了 `lib/gconv/gconv-modules`，且 `libKSC.so` / `libJIS.so` / `libCNS.so` 这些同目录表文件没被裁掉——两者缺一，CJK 就会报 `conversion to \`EUC-KR' is not supported`。
 - 前缀**不带 locale 数据**，`C.UTF-8` 不可用，`kokona-grun` 默认 `LC_ALL=C`（内建、不报错、字节透明，UTF-8 文本原样透传）。自己编译了 locale 数据放进 `lib/locale` 后，显式 `LC_ALL=... kokona-grun ...` 即可生效。
-- 看到 `locale: Cannot set LC_CTYPE to default locale` 说明 `LC_ALL` 被指到了一个没有数据文件的 locale，不是缺库。
+- `klocale` 若仍打印三行 `Cannot set LC_CTYPE/MESSAGES/COLLATE to default locale`，**这是预期行为**：没有 `lib/locale/locale-archive` 时，逐 category 探测的 `locale` 工具一定会报；`hello`、`iconv`、UTF-8 透传都不受影响。不要为这三行去补整个 locale-archive。
+- `kokona-grun --version` / `--help` 会打印前缀位置与用法，不再把 loader 自己的 usage dump 当成结果抛给用户。
 
 ## 限制
 

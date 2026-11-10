@@ -50,6 +50,10 @@ mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex"
 # line. Gate the build on the same check the repo ships.
 if command -v node >/dev/null 2>&1; then
   ( cd "$ROOT" && node tools/check-shim.cjs ) || { echo "shim syntax check failed" >&2; exit 1; }
+  # The CSS lives inside that same JS string. A stray quote keeps the JS valid
+  # while turning a rule into garbage, and unbalanced braces silently swallow
+  # every rule that follows — both look like "the style I wrote had no effect".
+  ( cd "$ROOT" && node tools/check-css.cjs ) || { echo "injected CSS check failed" >&2; exit 1; }
 fi
 
 echo "[1/6] resources"
