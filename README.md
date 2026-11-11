@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.1.2**（151）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r41**
+> Android 8.1+ · arm64 · 当前 **1.1.3**（152）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r42**
 
 ## 路线：从引擎到兼容层，全程不用 PRoot
 
@@ -230,7 +230,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 151 / versionName 1.1.2
+│   ├── AndroidManifest.xml        # versionCode 152 / versionName 1.1.3
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -325,13 +325,15 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.1.2**（versionCode 151）
+- App：**1.1.3**（versionCode 152）
 - DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r41**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r42**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.1.2（本次）**：修 r40 回归。**R1（发行阻断）**：CPython 扩展模块 `_sqlite3`/`_ssl`/`_hashlib` 依赖的 `libsqlite3_python.so`/`libssl_python.so`/`libcrypto_python.so` 此前漏打（打包只拷了 `libpython3.15.so`），导致 `import sqlite3`/`import ssl` 报 "library lib*_python.so not found"；现从原始交叉构建 prefix 补进 `lib/`。`ensurepip` 自带的 `pip-26.2.2-py3-none-any.whl` 此前未解包，`pip` 不可用；现解压进 `site-packages`，`python -m pip` 可用。**R2**：`--shell` 原把每行直接当程序路径 exec，无解析；现跳过空行与 `#` 注释、按空白切分参数、bare 命令名解析到 `$G/bin`，`--help` 写清语义（它**不是** shell）。**R3**：`glibc-runtime/SKILL.md` 明确标注 `getconf PATH_SEPARATOR` 在 glibc 2.44 下已确认不可用（用字面 `:` 代替）。打包新增强制自检：扫描全部 `lib-dynload` 模块的 `DT_NEEDED`，任一依赖不在 `lib/` 且非 Android 系统库则构建失败；并校验 `site-packages/pip` 存在、`python3.15` 为 0755。
+**1.1.3（本次）**：**WebView 键盘避让**——原生侧改用 `WindowInsets`（API 30+ 取 `Type.ime()` 精确高度，低于 30 回落 `getSystemWindowInsetBottom`）在根视图监听键盘，经 `evaluateJavascript` 注入 `window.onKeyboardHeight(<px>)` 把高度推给网页；网页据此给 body 加 `padding-bottom` 并复用 `--kn-keyboard-inset`，聚焦输入框 `scrollIntoView({block:'center'})`。原生不再给 WebView 加底部 padding（单一来源，杜绝双重留白），也不依赖旧系统 WebView（Chrome/131，低于 M139）的 `visualViewport` resize。**R3 收尾**：`glibc-runtime/SKILL.md` 新增「getconf 变量限制」小节，明确 `PATH_SEPARATOR` 不可用并列出已确认可用的 7 个变量。运行时 r41 不变（仅 App 侧改动）。
+
+**1.1.2**：修 r40 回归。**R1（发行阻断）**：CPython 扩展模块 `_sqlite3`/`_ssl`/`_hashlib` 依赖的 `libsqlite3_python.so`/`libssl_python.so`/`libcrypto_python.so` 此前漏打（打包只拷了 `libpython3.15.so`），导致 `import sqlite3`/`import ssl` 报 "library lib*_python.so not found"；现从原始交叉构建 prefix 补进 `lib/`。`ensurepip` 自带的 `pip-26.2.2-py3-none-any.whl` 此前未解包，`pip` 不可用；现解压进 `site-packages`，`python -m pip` 可用。**R2**：`--shell` 原把每行直接当程序路径 exec，无解析；现跳过空行与 `#` 注释、按空白切分参数、bare 命令名解析到 `$G/bin`，`--help` 写清语义（它**不是** shell）。**R3**：`glibc-runtime/SKILL.md` 明确标注 `getconf PATH_SEPARATOR` 在 glibc 2.44 下已确认不可用（用字面 `:` 代替）。打包新增强制自检：扫描全部 `lib-dynload` 模块的 `DT_NEEDED`，任一依赖不在 `lib/` 且非 Android 系统库则构建失败；并校验 `site-packages/pip` 存在、`python3.15` 为 0755。
 
 **1.1.1**：修复 Python 启动器 `python/bin/python3.15` 权限位丢失（0644 → 0755，否则 `python`/`python3`/`pip` 一律 rc=126）；设备端 `ensureExecutables` 与打包自检双重兜底。文档补充：Android 无 `/tmp`（用 `$TMPDIR`）、不内置编译器/工具链（需编译请在开发机完成再推送设备）。P11（`.so` 的 x 位）经核实无需改动。

@@ -374,21 +374,21 @@ public class MainActivity extends Activity {
             // mutations that matter, and a 1.2s poll re-ran the dialog scan — and
             // with it a forced layout — forever, which fought the sidebar's own
             // polling and could wedge the page.
-            // Keyboard: keep the composer above the IME and expose the inset as a CSS
-            // variable for layouts that position themselves against the visual viewport.
-            // Writing to documentElement.style is itself a mutation the sidebar
-            // watches, so only write when the value really changed.
+            // Keyboard avoidance is driven by the native layer: it measures the IME
+            // height from window insets and calls window.onKeyboardHeight(), which is
+            // reliable even on the old system WebView (below M139) where the
+            // visualViewport resize can fail to fire. The page applies the inset
+            // itself (padding-bottom + fixed-bar offset), so the native layer never
+            // pads the WebView -- single source of truth, no double inset.
             "var kbLast=-1;" +
-            "var kb=function(){try{var v=window.visualViewport;" +
-            "var h=Math.max(0,(window.innerHeight-(v?v.height:window.innerHeight))+(v?v.offsetTop:0));" +
+            "window.onKeyboardHeight=function(h){try{h=Math.max(0,h|0);" +
             "if(h===kbLast)return;kbLast=h;" +
-            "document.documentElement.style.setProperty('--kn-keyboard-inset',h+'px');}catch(e){}};" +
-            "window.addEventListener('resize',kb);" +
-            "if(window.visualViewport){window.visualViewport.addEventListener('resize',kb);" +
-            "window.visualViewport.addEventListener('scroll',kb);}" +
+            "document.documentElement.style.setProperty('--kn-keyboard-inset',h+'px');" +
+            "if(document.body)document.body.style.paddingBottom=h+'px';" +
+            "}catch(e){}};" +
             "document.addEventListener('focusin',function(e){setTimeout(function(){try{" +
             "e.target.scrollIntoView({block:'center',behavior:'smooth'});}catch(x){}},260);},true);" +
-            "kb();" +
+            "if(window.onKeyboardHeight)window.onKeyboardHeight(0);" +
             "})();";
 
     /** The shim plus the bundled signature used by the collapsed-sidebar opener. */
@@ -439,7 +439,10 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    static final String APP_VERSION = "1.1.2";
+    /** Last IME (keyboard) height in px reported by the window insets; re-sent to the page after it loads. */
+    private int lastImeHeight = 0;
+
+    static final String APP_VERSION = "1.1.3";
 
     private EngineService.Listener engineListener;
 
@@ -723,6 +726,13 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
+    /** Pushes the live IME height (px) to the page so it can avoid the keyboard. */
+    private void bridgeKeyboardHeight(int height) {
+        if (web == null) return;
+        web.evaluateJavascript(
+                "if(window.onKeyboardHeight)window.onKeyboardHeight(" + height + ");", null);
+    }
+
     private void initWebView() {
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -746,13 +756,26 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 26) {
             web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         }
-        // Fallback for ROMs that ignore adjustResize: pad the WebView by the IME
-        // inset. When adjustResize works the inset is already consumed (bottom=0),
-        // so this stays a no-op there.
+        // Keyboard avoidance: measure the IME height from the window insets and
+        // bridge it to the page via window.onKeyboardHeight(). Relying on window
+        // insets (not the page's visualViewport resize) works even on the old
+        // system WebView (below M139) where that resize can fail to fire. The page
+        // applies the inset itself, so the native layer must NOT also pad the
+        // WebView -- single source of truth, no double inset.
         web.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
             @Override
             public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
-                view.setPadding(0, 0, 0, Math.max(0, insets.getSystemWindowInsetBottom()));
+                int ime;
+                if (Build.VERSION.SDK_INT >= 30) {
+                    ime = insets.getInsets(WindowInsets.Type.ime()).bottom;
+                } else {
+                    // Legacy: below API 30 the IME is folded into the system-window
+                    // bottom inset rather than exposed as its own type.
+                    ime = insets.getSystemWindowInsetBottom();
+                }
+                if (ime < 0) ime = 0;
+                lastImeHeight = ime;
+                bridgeKeyboardHeight(ime);
                 return insets;
             }
         });
@@ -771,6 +794,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 view.evaluateJavascript(shimScript(), null);
+                bridgeKeyboardHeight(lastImeHeight);
                 webLoaded = true;
                 if (pendingPickResult != null) {
                     deliverPick(pendingPickResult);
