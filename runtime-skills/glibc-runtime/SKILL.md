@@ -105,7 +105,7 @@ $BUILD_TMP/llvm-readelf -d ./binary 2>/dev/null || readelf -d ./binary | grep NE
 - 需要 systemd/dbus 的程序无法运行（Android 没有）。
 - 多线程程序若依赖 `rseq`/`set_robust_list` 已做适配，但极端调度场景可能与 bionic 行为有差异。
 - `getpwuid` 对 Android app uid 返回合成的 passwd 条目（与 Termux 一致）。
-- **`getconf` 变量表不全**：这份 glibc 2.44 的 `posix/posix-conf-vars.list` 里没有 `PATH_SEPARATOR`，`getconf PATH_SEPARATOR` 会返回 `Unrecognized variable`；同类 POSIX 名称也可能缺失。这是上游变量表本身的范围，不是打包丢文件，用 `getconf -a` 查实际支持列表。
+- **部分 `getconf` 变量不可用（已确认缺失）**：glibc 2.44 的 `posix/posix-conf-vars.list` 里没有 `PATH_SEPARATOR`，`getconf PATH_SEPARATOR` 会返回 `Unrecognized variable`；同类 POSIX 名称也可能缺失。这是上游变量表本身的范围，**不是打包丢文件**，不要指望它出现。需要路径分隔符时直接用字面 `:`（或读 `$PATH_SEPARATOR` 环境变量，POSIX 约定它就是 `:`），不要用 `getconf` 去查。完整支持列表用 `kgetconf -a` 查。
 - **Android 没有 `/tmp`**：系统不提供该目录，标准做法是使用应用缓存目录 `$TMPDIR`（由 App 注入且可写）。硬编码 `/tmp` 的程序会因路径不存在而失败，需要临时目录时一律读 `$TMPDIR`。
 
 ## 禁止

@@ -325,6 +325,28 @@ chmod 0755 "$RT/python/bin/python3.15"
 # to lose because it lives under python/bin/, outside the device's bin/* sweep.
 test -x "$RT/python/bin/python3.15" || die "python launcher not executable: $RT/python/bin/python3.15"
 
+# R1: the extension modules _sqlite3/_ssl/_hashlib are linked against
+# CPython's own sqlite3/openssl, named libsqlite3_python.so / libssl_python.so
+# / libcrypto_python.so. They live in $PY_SRC/lib next to libpython3.15.so but
+# were never copied, which broke `import sqlite3` / `import ssl` on device.
+# Ship them alongside the interpreter.
+for lib in libsqlite3_python.so libssl_python.so libcrypto_python.so; do
+  [ -e "$PY_SRC/lib/$lib" ] && copy "$PY_SRC/lib/$lib" "$RT/lib/$lib"
+done
+# R1: expand the bundled pip wheel into site-packages so `python -m pip` works
+# out of the box (ensurepip ships but was never run).
+python3 - "$RT" <<'PY'
+import os, sys, zipfile
+rt = sys.argv[1]
+bd = os.path.join(rt, "python/lib/python3.15/ensurepip/_bundled")
+whl = next((os.path.join(bd, f) for f in os.listdir(bd) if f.endswith(".whl")), None)
+if whl:
+    sp = os.path.join(rt, "python/lib/python3.15/site-packages")
+    os.makedirs(sp, exist_ok=True)
+    with zipfile.ZipFile(whl) as z:
+        z.extractall(sp)
+PY
+
 # Python entry points. The interpreter locates its prefix from its own path
 # ($RT/python/bin/python3.15 -> $RT/python/lib/python3.15), so PYTHONHOME must
 # stay unset: exporting it makes venv ignore pyvenv.cfg and breaks the venv.

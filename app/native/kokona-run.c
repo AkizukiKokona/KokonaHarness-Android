@@ -266,27 +266,51 @@ static void show_help(void) {
     puts("kokona-run - run a glibc-linked arm64 program on the bundled glibc prefix");
     puts("");
     puts("usage: kokona-run [--] <program> [args...]");
-    puts("       kokona-run --exec [--] <program> [args...]   skip environment prep");
-    puts("       kokona-run --shell                            read commands from stdin");
+    puts("       kokona-run --exec [--] <program> [args...]   skip DNS/locale prep");
+    puts("       kokona-run --shell                            batch lines from stdin");
     puts("       kokona-run --version | --help");
     puts("");
-    puts("<program> must be a path (./x or /abs/x); the loader does not search PATH.");
+    puts("<program> is a path or a basename resolved under prefix bin/; the loader");
+    puts("does not search the shell PATH.");
     puts("glibc tools: kiconv kgetent kgetconf klocale kldd kgencat kpldd");
+    puts("");
+    puts("--exec  : skip the DNS and locale preparation. Both modes run in roughly");
+    puts("          15 ms, so the speed difference is usually negligible; --exec is");
+    puts("          mainly for scripts that already supply a clean environment.");
+    puts("--shell : read one command per line from stdin. Each line is split on");
+    puts("          whitespace (no quoting, pipes, or builtins). Blank lines and");
+    puts("          lines beginning with '#' are ignored. A bare command name is");
+    puts("          resolved against the glibc prefix bin/ directory. This is NOT a");
+    puts("          shell: there is no variable expansion, globbing, or redirection.");
     printf("prefix: %s\n", G);
 }
 
-/* One interactive process: pay the preparation cost once, then only the
- * loader cost per command. Stdin lines are whitespace-split (no quoting). */
+/* Minimal batch runner: read one command per line from stdin and execute it
+ * through the loader. Lines are split on whitespace (no quoting, no pipes,
+ * no builtins, no redirection). Blank lines and lines whose first non-blank
+ * character is '#' are skipped as comments. A bare command name (no '/') is
+ * resolved against the glibc prefix bin/ directory, so `getconf LONG_BIT`
+ * works without a path. This is NOT a shell. */
 static int shell_loop(void) {
     char line[2048];
+    char resolved[2304];
     while (fgets(line, sizeof line, stdin)) {
+        /* Skip leading whitespace, then decide blank/comment. */
+        char *p = line;
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+        if (*p == '\0' || *p == '#') continue;
         char *tokens[64];
         int n = 0;
-        for (char *p = strtok(line, " \t\r\n"); p && n < 60;
-             p = strtok(NULL, " \t\r\n")) {
-            tokens[n++] = p;
+        for (char *q = strtok(p, " \t\r\n"); q && n < 60;
+             q = strtok(NULL, " \t\r\n")) {
+            tokens[n++] = q;
         }
         if (n == 0) continue;
+        /* Resolve a bare command name against the glibc prefix bin/. */
+        if (strchr(tokens[0], '/') == NULL) {
+            snprintf(resolved, sizeof resolved, "%s/bin/%s", G, tokens[0]);
+            tokens[0] = resolved;
+        }
         char **nav = build_argv(NULL, n, tokens);
         if (!nav) return 127;
         pid_t pid = fork();
