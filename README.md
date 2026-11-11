@@ -276,7 +276,7 @@ KokonaHarness-Android/
 <details>
 <summary>展开开发记录</summary>
 
-**1.0.48**（运行时 r38）`kldd` 连修三轮才走对：`kokona-glibc/bin/ldd` 是 `/system/bin/sh` 脚本，r36 把它交给 loader → `invalid ELF header`；r37 改用 `/system/bin/sh` 却顺手导出了 `LD_LIBRARY_PATH`，bionic 的 sh 自己去加载 glibc 的 `libc.so`（链接脚本）→ `bad ELF magic`。现在**绕开脚本**，直接用 loader 自带的 `--list` 模式，`--library-path` 同时带上前缀与 `~/.local/lib/kokona-glibc`，补充库照样解析，且**一个环境变量都不碰**（skill 里那条禁令就是这么来的）。同批还修了 `dns.servers` 逐行校验与多条 nameserver 拼成一行的老问题、无障碍未授权时改为打开系统设置页、开屏去掉跳动的百分比。版本号 1.0.48（versionCode 148），本轮为本地试装包，未发 Release。
+**1.0.48**（运行时 r38）`kldd` 连修三轮才走对：`kokona-glibc/bin/ldd` 是 `/system/bin/sh` 脚本，r36 把它交给 loader → `invalid ELF header`；r37 改用 `/system/bin/sh` 却顺手导出了 `LD_LIBRARY_PATH`，bionic 的 sh 自己去加载 glibc 的 `libc.so`（链接脚本）→ `bad ELF magic`。现在**绕开脚本**，直接用 loader 自带的 `--list` 模式，`--library-path` 同时带上前缀与 `~/.local/lib/kokona-glibc`，补充库照样解析，且**一个环境变量都不碰**（skill 里那条禁令就是这么来的）。同批还修了 `dns.servers` 逐行校验与多条 nameserver 拼成一行的老问题、无障碍未授权时改为打开系统设置页、开屏改成分阶段反馈：解压阶段有真实字节进度，显示连续百分比；启动引擎阶段没有可测进度，只保留转圈与「（没有卡死喵）」安抚文字，不再出现 0→88→100 那种跳数字。版本号 1.0.48（versionCode 148），本轮为本地试装包，未发 Release。
 
 **1.0.43** **左侧抽屉**与**设置面板**加上毛玻璃（`backdrop-filter:blur(14px)` + 72% 底）。抽屉原本是实底色，压在主页上亮度几乎一致，两块会读成同一层，所以必须配一点模糊才有边界；设置面板的 `::before` 从 82% 降到 70%，让模糊透出来而不是被近不透明的白盖住。**终端改为全屏**：原先 `MATCH_PARENT` 仍留着 72dp 顶边距和 16dp 圆角，看着像半屏抽屉；现在边距与圆角归零，整个屏幕就是一层终端，点 × 或返回键回到仍然打开的设置界面。README 另补「自己编译要留意的四件事」（keystore、SDK 版本覆盖、zip、SHIM 门禁）。版本号 1.0.43（versionCode 143）。
 

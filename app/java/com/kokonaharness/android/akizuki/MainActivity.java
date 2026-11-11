@@ -868,24 +868,47 @@ public class MainActivity extends Activity {
     }
 
     private void applyState(EngineService.Snapshot snapshot) {
-        // One boot screen, one job: say what is happening. The progress value
-        // jumped 0 -> 88 -> 100 in two steps, which read like a stall; a plain
-        // spinner plus a short reassurance is calmer and costs nothing.
+        // Two phases, two different kinds of feedback:
+        //   * unpacking has a REAL continuous 0..1 progress (byte counts), so
+        //     a percentage is honest and useful here;
+        //   * starting the engine has no measurable progress -- the old
+        //     weighted values jumped 0 -> 88 -> 100 and looked like a stall.
+        //     That phase gets a plain spinner plus the reassurance instead.
+        // The parenthetical therefore belongs to STARTING only.
         switch (snapshot.state) {
-            case INSTALLING:
-            case STARTING:
+            case INSTALLING: {
                 overlay.setVisibility(View.VISIBLE);
                 retryButton.setVisibility(View.GONE);
                 copyButton.setVisibility(View.GONE);
                 shareButton.setVisibility(View.GONE);
                 renderButton.setVisibility(View.GONE);
                 String label = snapshot.message != null ? snapshot.message
-                        : snapshot.state == EngineService.State.INSTALLING
-                                ? getString(R.string.engine_installing)
-                                : getString(R.string.engine_starting);
+                        : getString(R.string.engine_installing);
+                if (snapshot.progress >= 0f) {
+                    int pct = Math.min(100, Math.round(snapshot.progress * 100f));
+                    progress.setIndeterminate(false);
+                    progress.setProgress(pct);
+                    statusText.setText(label + " " + pct + "%");
+                } else {
+                    progress.setIndeterminate(true);
+                    progress.setProgress(0);
+                    statusText.setText(label);
+                }
+                break;
+            }
+            case STARTING: {
+                overlay.setVisibility(View.VISIBLE);
+                retryButton.setVisibility(View.GONE);
+                copyButton.setVisibility(View.GONE);
+                shareButton.setVisibility(View.GONE);
+                renderButton.setVisibility(View.GONE);
+                String label = snapshot.message != null ? snapshot.message
+                        : getString(R.string.engine_starting);
                 progress.setIndeterminate(true);
+                progress.setProgress(0);
                 statusText.setText(label + "（没有卡死喵）");
                 break;
+            }
             case READY:
                 statusText.setText("正在加载界面…");
                 if (snapshot.url != null && snapshot.url.equals(activeUrl) && webLoaded) {
