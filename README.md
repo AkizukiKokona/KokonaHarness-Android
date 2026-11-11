@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.0.45**（147）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r37**
+> Android 8.1+ · arm64 · 当前 **1.0.48**（148）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r37**
 
 ## 路线：从引擎到兼容层，全程不用 PRoot
 
@@ -136,7 +136,7 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 
 **定位**：九项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
 
-已实施（1.0.45）：
+已实施（1.0.48）：
 
 1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
 2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点「允许」后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
@@ -230,7 +230,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 147 / versionName 1.0.45
+│   ├── AndroidManifest.xml        # versionCode 148 / versionName 1.0.48
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -321,7 +321,7 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.0.45**（versionCode 147）
+- App：**1.0.48**（versionCode 148）
 - DSH：**0.2.2-rc.1**
 - KokonaRuntime：**dsh-0.2.2-rc.1-r33**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`

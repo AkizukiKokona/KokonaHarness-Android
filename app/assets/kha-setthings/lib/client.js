@@ -117,7 +117,7 @@ window.__ModuleLoader__.load({
       ]
       return h('div', { className: 'khaSet_block' },
         h('div', { className: 'khaSet_title' }, '运行模式'),
-        h('div', { className: 'khaSet_desc' }, '默认所有命令直接跑在 Android bionic 上，不开容器、不用 PRoot。无障碍服务未开启时选择无障碍模式会保持普通模式；无障碍授权在重启 App 后需要重新开启。'),
+        h('div', { className: 'khaSet_desc' }, '默认所有命令直接跑在 Android bionic 上，不开容器、不用 PRoot。未开启无障碍时点「无障碍模式」会打开系统设置；授权返回后自动切换。无障碍授权在重启 App 后会丢失，需要重新开启。'),
         h('div', { className: 'khaSet_row' }, RUN_MODES.map((m) =>
           h('button', {
             type: 'button', key: m[0], title: m[2],
@@ -131,7 +131,7 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', key: 'shizuku', className: 'khaSet_btn', onClick: () => call(data.shizukuInstalled ? 'requestShizuku' : 'openShizuku') }, 'Shizuku'),
           h('button', { type: 'button', key: 'a11y', className: 'khaSet_btn', onClick: () => call('openAccessibility') }, '无障碍设置')
         ]) : null,
-        mode === 'accessibility' && !data.accessibility ? h('div', { className: 'khaSet_row', style: { marginTop: '10px' } },
+        !data.accessibility ? h('div', { className: 'khaSet_row', style: { marginTop: '10px' } },
           h('button', { type: 'button', className: 'khaSet_btn', onClick: () => call('openAccessibility') }, '去开启无障碍服务')) : null,
         h('div', { className: 'khaSet_row', style: { marginTop: '10px' } }, [
           h('button', { type: 'button', key: 'notif', className: 'khaSet_btn', onClick: () => call('openNotificationAccess') }, '通知使用权'),

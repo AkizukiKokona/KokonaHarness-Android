@@ -439,9 +439,12 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    static final String APP_VERSION = "1.0.45";
+    static final String APP_VERSION = "1.0.48";
 
     private EngineService.Listener engineListener;
+
+    /** Set when the user picked accessibility mode and was sent to grant it. */
+    private boolean pendingAccessibilityMode;
 
     /**
      * Last CSS probe reported by the shim. Kept so the settings page can show
@@ -865,9 +868,9 @@ public class MainActivity extends Activity {
     }
 
     private void applyState(EngineService.Snapshot snapshot) {
-        // One boot screen, one job: say what is happening and how far along it
-        // is. Everything else (versions, hints, notices) lives in the runtime UI
-        // or the settings page, not here.
+        // One boot screen, one job: say what is happening. The progress value
+        // jumped 0 -> 88 -> 100 in two steps, which read like a stall; a plain
+        // spinner plus a short reassurance is calmer and costs nothing.
         switch (snapshot.state) {
             case INSTALLING:
             case STARTING:
@@ -880,16 +883,8 @@ public class MainActivity extends Activity {
                         : snapshot.state == EngineService.State.INSTALLING
                                 ? getString(R.string.engine_installing)
                                 : getString(R.string.engine_starting);
-                if (snapshot.progress >= 0f) {
-                    label = label + " "
-                            + Math.min(100, (int) Math.round(snapshot.progress * 100f)) + "%";
-                    progress.setIndeterminate(false);
-                    progress.setProgress(Math.round(snapshot.progress * 100f));
-                } else {
-                    progress.setIndeterminate(true);
-                    progress.setProgress(0);
-                }
-                statusText.setText(label);
+                progress.setIndeterminate(true);
+                statusText.setText(label + "（没有卡死喵）");
                 break;
             case READY:
                 statusText.setText("正在加载界面…");
@@ -1323,6 +1318,17 @@ public class MainActivity extends Activity {
             pendingPickResult = null;
             deliverPick(script);
         }
+        // Coming back from the system accessibility page. If the user granted
+        // it, finish the switch they asked for; if not, stay on normal without
+        // nagging. Android drops the grant when the app process restarts, so
+        // that case also simply shows normal mode until they open it again.
+        if (pendingAccessibilityMode) {
+            pendingAccessibilityMode = false;
+            if (RunMode.isAccessibilityEnabled(this)) {
+                RunMode.setMode(this, RunMode.ACCESSIBILITY);
+                ToastCompat.show(this, "已切换到无障碍模式");
+            }
+        }
     }
 
     @Override
@@ -1545,8 +1551,13 @@ public class MainActivity extends Activity {
             }
             if (RunMode.ACCESSIBILITY.equals(mode)
                     && !RunMode.isAccessibilityEnabled(MainActivity.this)) {
-                // Silent fallback: stay on normal, say so once, move on.
-                ToastCompat.show(MainActivity.this, "无障碍服务未开启，已保持普通模式");
+                // Not granted yet: the only useful next step is the system
+                // accessibility page. Staying silently on normal here left no
+                // way to ever turn the service on. No custom dialog (the grant
+                // itself is the decision); on return apply the mode if granted.
+                pendingAccessibilityMode = true;
+                ToastCompat.show(MainActivity.this, "请在系统设置里开启 KHA 无障碍服务");
+                RunMode.openAccessibilitySettings(MainActivity.this);
                 return;
             }
             if (RunMode.ADVANCED.equals(mode)
