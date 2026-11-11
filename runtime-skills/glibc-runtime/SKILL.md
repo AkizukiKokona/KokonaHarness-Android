@@ -56,7 +56,7 @@ kgetconf LONG_BIT                # ✓ 推荐：用 k 前缀启动器
 | `kgetent` | getent（hosts / services / protocols / networks 均可查） |
 | `kgetconf` | getconf |
 | `klocale` | locale |
-| `kldd` | ldd（列出动态依赖；内部走 `/system/bin/sh`，并把 `~/.local/lib/kokona-glibc` 通过 `LD_LIBRARY_PATH` 传下去，所以补的库也能看到） |
+| `kldd` | ldd（列出动态依赖；**绕开 ldd 脚本**，直接用 loader 的 `--list` + `--library-path`，不设任何环境变量，所以 `~/.local/lib/kokona-glibc` 里补的库也能看到，bionic 进程又不会被污染） |
 | `kgencat` | gencat |
 | `kpldd` | pldd（列出进程加载的共享库） |
 
@@ -87,7 +87,7 @@ $BUILD_TMP/llvm-readelf -d ./binary 2>/dev/null || readelf -d ./binary | grep NE
 ' | kiconv -f UTF-8 -t EUC-KR`。前提是打包时把 `gconv-modules.d/gconv-modules-extra.conf` 的注册表并进了 `lib/gconv/gconv-modules`，且 `libKSC.so` / `libJIS.so` / `libCNS.so` 这些同目录表文件没被裁掉——两者缺一，CJK 就会报 `conversion to \`EUC-KR' is not supported`。
 - 前缀**不带 locale 数据**，`C.UTF-8` 不可用，`kokona-grun` 默认 `LC_ALL=C`（内建、不报错、字节透明，UTF-8 文本原样透传）。自己编译了 locale 数据放进 `lib/locale` 后，显式 `LC_ALL=... kokona-grun ...` 即可生效。
 - `klocale` 若仍打印三行 `Cannot set LC_CTYPE/MESSAGES/COLLATE to default locale`，**这是预期行为**：没有 `lib/locale/locale-archive` 时，逐 category 探测的 `locale` 工具一定会报；`hello`、`iconv`、UTF-8 透传都不受影响。不要为这三行去补整个 locale-archive。
-- `kokona-grun --version` / `--help` 会打印前缀位置与用法，不再把 loader 自己的 usage dump 当成结果抛给用户。
+- `kokona-grun --version` / `--help` / 无参数目前仍会把 loader 自己的 usage 或报错透传出来，只是体验问题，不影响运行，暂不修。
 
 ## 限制
 
@@ -100,6 +100,6 @@ $BUILD_TMP/llvm-readelf -d ./binary 2>/dev/null || readelf -d ./binary | grep NE
 ## 禁止
 
 - 不要对 bionic 程序（`/system/bin/linker64`）使用 kokona-grun。
-- 不要设置全局 `LD_LIBRARY_PATH` 指向 `kokona-glibc/lib`——会把 glibc 库泄漏进 bionic 进程导致崩溃。
+- 不要设置全局 `LD_LIBRARY_PATH` 指向 `kokona-glibc/lib`——会把 glibc 库泄漏进 bionic 进程导致崩溃。最典型的现场是：用 `/system/bin/sh` 跑 `ldd` 脚本时顺手导出了它，`sh` 自己就会去加载 `libc.so`（链接脚本、不是 ELF）→ `CANNOT LINK EXECUTABLE "/system/bin/sh": ... has bad ELF magic`。`kldd` 之所以用 loader 的 `--list`，就是为了完全不碰这个变量。
 - 不要用 proot/chroot 方案；本运行时就是无 proot 的按需方案。
 - 不要修改二进制 interpreter（除非用户明确要求，可用 `patchelf` 类工具但需说明后果）。

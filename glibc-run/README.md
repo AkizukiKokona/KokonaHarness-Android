@@ -94,12 +94,23 @@ KokonaHarness 只在需要跑 glibc 程序时才用这套前缀，bionic 仍是�
    放在 `KokonaRuntime/bin`（外加 `kokona-grun` 本体，它按自身位置推导前缀），
    `kokona-glibc/bin` 不再进 PATH，两个命名空间结构上不可能重叠。
 
-11. **`ldd` 是脚本，不能经 loader 启动**
+11. **`ldd` 是脚本，三轮才走对**
     `kokona-glibc/bin/ldd` 是 `#!/system/bin/sh` 的纯脚本（Android 没有 `/bin/bash`），
-    而 `kldd` 包装器早期把它当 ELF 交给 loader：`error while loading shared libraries:
-    ... invalid ELF header`。修法是 `exec /system/bin/sh "$G/bin/ldd" "$@"`。
-    另外 `--library-path` 只对包装器自己启动的进程有效，ldd 内部还会再 exec 一次 loader，
-    所以补的库目录要**同时**通过 `LD_LIBRARY_PATH` 传下去。
+    它的 `RTLDLIST` 只写了裸 loader 路径，**不带** `--library-path`。三条路里前两条都是坑：
+
+    | 版本 | 做法 | 结果 |
+    |---|---|---|
+    | r36 | 把脚本交给 loader exec | `invalid ELF header`（loader 只认 ELF） |
+    | r37 | `/system/bin/sh` 跑脚本，同时导出 `LD_LIBRARY_PATH="$G/lib:..."` | `CANNOT LINK EXECUTABLE "/system/bin/sh": ... libc.so has bad ELF magic` |
+    | r38 | **绕开脚本**，`ld.so --library-path "$LIBPATH" --list "$@"` | 正常 |
+
+    r37 的错在于：被 exec 的是 **bionic** 的 `/system/bin/sh`，它启动时就去
+    `LD_LIBRARY_PATH` 找 `libc.so`，撞上 glibc 的 `libc.so`（链接脚本、非 ELF）直接起不来。
+    这正是 skill 里明令禁止的那条「不要把前缀泄漏进 bionic 进程」。
+    `--list` 是 loader 自带的依赖分析模式（ldd 内部用的就是它），不需要 shell；
+    `--library-path` 同时带上 `$G/lib` 与 `~/.local/lib/kokona-glibc`，补充库照样解析，
+    而且**一个环境变量都不碰**。只有 `--help` / `--version` / 无参数这类纯输出分支才回落到
+    `/system/bin/sh "$G/bin/ldd"`（同样不导出任何变量）。
 
 12. **resolv.conf：一行一条，且逐行校验**
     glibc 的 resolver 按行解析，`nameserver 1.1.1.1 nameserver 8.8.8.8` 只会取第一个——

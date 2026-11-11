@@ -497,13 +497,32 @@ d=\$(dirname "\$0")
 if [ -n "\${KOKONA_GLIBC:-}" ]; then G="\$KOKONA_GLIBC"; else G="\$d/../kokona-glibc"; fi
 [ -x "\$G/lib/ld-linux-aarch64.so.1" ] || { echo "k$tool: glibc runtime missing at \$G" >&2; exit 127; }
 LIBPATH="\$G/lib:\$HOME/.local/lib/kokona-glibc"
-# ldd is a shell script, not an ELF: exec'ing it through the loader fails with
-# "invalid ELF header". Run it with the shell (its own shebang cannot be used on
-# Android) and hand the extra library directory down through the environment,
-# because the --library-path above only reaches the process we start ourselves.
+# ldd is a shell script, not an ELF. Both obvious routes are broken:
+#   * exec it through the loader -> "invalid ELF header" (r36)
+#   * run it via /system/bin/sh with LD_LIBRARY_PATH exported -> the bionic sh
+#     itself loads glibc's libc.so (a linker script) and dies with
+#     "bad ELF magic" (r37). Never leak the prefix into LD_LIBRARY_PATH.
+# So skip the script: --list is the loader's own dependency-report mode, the
+# very mechanism ldd uses internally. --library-path carries the prefix plus
+# ~/.local/lib/kokona-glibc so supplementary libraries resolve too, and no
+# environment variable is touched at all -- bionic processes stay clean.
 if [ "$tool" = ldd ]; then
-  LD_LIBRARY_PATH="\$LIBPATH" exec /system/bin/sh "\$G/bin/ldd" "\$@"
+  if [ "\${1:-}" = "--" ]; then shift; fi
+  case "\${1:-}" in
+    --help|-h|--version|-V|--usage|"") exec /system/bin/sh "\$G/bin/ldd" "\$@" ;;
+  esac
+  if [ "\$#" -eq 1 ]; then
+    exec "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$LIBPATH" --list "\$1"
+  fi
+  rc=0
+  for f in "\$@"; do
+    echo "\$f:"
+    "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$LIBPATH" --list "\$f" || rc=\$?
+  done
+  exit \$rc
 fi
+# Unreachable for kldd: every branch above execs or exits. Kept so all
+# seven wrappers can be generated from one template.
 exec "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$LIBPATH" "\$G/bin/$tool" "\$@"
 EOS
     chmod 755 "$RT/bin/k$tool"
