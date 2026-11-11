@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.1.0**（149）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r39**
+> Android 8.1+ · arm64 · 当前 **1.1.1**（150）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r40**
 
 ## 路线：从引擎到兼容层，全程不用 PRoot
 
@@ -230,7 +230,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 149 / versionName 1.1.0
+│   ├── AndroidManifest.xml        # versionCode 150 / versionName 1.1.1
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -325,9 +325,11 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.1.0**（versionCode 149）
+- App：**1.1.1**（versionCode 150）
 - DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r33**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r40**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
+
+**1.1.1（本次）**：修复 Python 启动器 `python/bin/python3.15` 权限位丢失（0644 → 0755，否则 `python`/`python3`/`pip` 一律 rc=126）；设备端 `ensureExecutables` 与打包自检双重兜底。文档补充：Android 无 `/tmp`（用 `$TMPDIR`）、不内置编译器/工具链（需编译请在开发机完成再推送设备）。P11（`.so` 的 x 位）经核实无需改动。

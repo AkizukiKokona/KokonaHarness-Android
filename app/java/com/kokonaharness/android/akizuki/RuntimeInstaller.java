@@ -26,7 +26,7 @@ public final class RuntimeInstaller {
     // pre-plugin settings UI inside it, so devices that installed it kept that
     // tree and our later kha-setthings bundle ended up layered on top of the
     // old files. r34 forces the one full re-extract that clears the overlap.
-    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r39";
+    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r40";
 
     /**
      * The DSH release inside the runtime, without the packaging suffix: the boot
@@ -151,8 +151,11 @@ public final class RuntimeInstaller {
      * tarballs, so helpers outside bin/ arrive as 0644. In particular
      * {@code @pnpm/exe.android-arm64/pnpm} is exec'd by bin/pnpm and failed
      * with "can't execute: Permission denied", which broke plugin install and
-     * auto-update. Called on every boot (including the already-installed fast
-     * path) so fixing this never requires re-extracting the 600 MB tree.
+     * auto-update, and {@code python/bin/python3.15} (the CPython launcher,
+     * under python/bin/ rather than bin/) failed the same way so every
+     * python/python3/pip invocation returned rc=126. Called on every boot
+     * (including the already-installed fast path) so fixing this never
+     * requires re-extracting the 600 MB tree.
      */
     public static void ensureExecutables(File dir) {
         if (!dir.isDirectory()) return;
@@ -162,6 +165,15 @@ public final class RuntimeInstaller {
         }
         makeExecutable(new File(dir,
                 "lib/node_modules/@pnpm/exe.android-arm64/pnpm"));
+        // The CPython launcher is a thin executable (it links libpython3.15.so
+        // and lives under python/bin/, not bin/), so the bin/* sweep above does
+        // not touch it. Without this, python/python3/python3.15 fail with
+        // "Permission denied" (rc=126) on every install. Covered on every boot
+        // so an existing install is repaired without re-extracting the tree.
+        File[] pyBin = new File(dir, "python/bin").listFiles();
+        if (pyBin != null) {
+            for (File file : pyBin) if (file.isFile()) makeExecutable(file);
+        }
         // bin/git execs these helpers directly.
         File[] helpers = new File(dir, "libexec/git-core").listFiles();
         if (helpers != null) {

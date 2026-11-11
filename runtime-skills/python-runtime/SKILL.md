@@ -23,7 +23,8 @@ pip install --user requests
 
 ## 限制
 
-- 不支持现场编译 C 扩展（没有 Android clang/头文件）。只装纯 Python 包或 `py3-none-any` wheel；manylinux/linux wheel 与 Android 不兼容。
+- **不内置编译器 / 工具链**：运行时不含 `cc` / `gcc` / `clang` / `llvm` / `ar` / `make` / `readelf` / `objdump` 等。判断是否 ELF 一律用已内置的 `file`。需要编译 C 扩展的场景请在**开发机**完成，再把产物（`py3-none-any` wheel 或交叉编译出的 `.so`）推送到设备；不要在设备内编译——包体已约 695MB，再塞工具链会逼近 1GB，且发行用户不需要在设备里编译。
+- 只装纯 Python 包或 `py3-none-any` wheel；manylinux/linux wheel 与 Android 不兼容（bionic 与 glibc 的符号/路径不同）。
 - CPython 在 Android 上禁用了 `_multiprocessing` 与 `_posixshmem`（bionic 无 `sem_open`/`shm_open`）。用 `threading`、`asyncio` 或 `subprocess` 代替。
 - 没有 `tkinter`（Android 无 Tk）；`idlelib`、`test` 与 `turtledemo` 已从运行时裁剪。
 - 平台标签为 `android-27-arm64_v8a`，判断 wheel 兼容性时以它为准。

@@ -320,6 +320,10 @@ rm -rf "$RT/python/lib/python3.15/test" "$RT/python/lib/python3.15/idlelib" \
 find "$RT/python/lib/python3.15/lib-dynload" -maxdepth 1 \
      \( -name "_test*" -o -name "_ctypes_test*" \) -delete
 chmod 0755 "$RT/python/bin/python3.15"
+# Release-blocking guard: the thin CPython launcher must ship executable, or
+# python/python3/pip return rc=126 on device. The exec bit is otherwise easy
+# to lose because it lives under python/bin/, outside the device's bin/* sweep.
+test -x "$RT/python/bin/python3.15" || die "python launcher not executable: $RT/python/bin/python3.15"
 
 # Python entry points. The interpreter locates its prefix from its own path
 # ($RT/python/bin/python3.15 -> $RT/python/lib/python3.15), so PYTHONHOME must

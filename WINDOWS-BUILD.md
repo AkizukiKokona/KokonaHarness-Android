@@ -86,7 +86,7 @@ bin/pnpm[6]: .../@pnpm/exe.android-arm64/pnpm: can't execute: Permission denied
 
 `bin/node` 同样可能是 0644，只是被「给 `bin/` 下所有文件加执行位」顺手救了。
 
-**结论**：别指望打包侧完整保留 mode，在设备端兜底。`RuntimeInstaller.ensureExecutables()` 每次启动（含「版本相同、跳过解压」的快速路径）给这些路径补权限：`bin/*`、`@pnpm/exe.android-arm64/pnpm`、`libexec/git-core/*`、ABI 命名的 landlock runner，并确保 `lib/*.so` 可读。同理 `node_modules` 的符号链接在 Windows 上无法保留，打包时删掉、由 App 在首次启动时用 `Files.createSymbolicLink` 重建。
+**结论**：别指望打包侧完整保留 mode，在设备端兜底。`RuntimeInstaller.ensureExecutables()` 每次启动（含「版本相同、跳过解压」的快速路径）给这些路径补权限：`bin/*`、`@pnpm/exe.android-arm64/pnpm`、`libexec/git-core/*`、ABI 命名的 landlock runner、`python/bin/*`（CPython 瘦启动器，在 `python/bin/` 下而非 `bin/`，否则 `python`/`pip` 一律 rc=126），并确保 `lib/*.so` 可读。同理 `node_modules` 的符号链接在 Windows 上无法保留，打包时删掉、由 App 在首次启动时用 `Files.createSymbolicLink` 重建。
 
 顺带一个真机专属坑：Termux 编译的 `libcrypto.so.3` 把 `OPENSSLDIR` 写死成 `/data/data/com.termux/files/usr/etc/tls`。该路径在别的 App 里存在但不可读时，Node 一行 JS 都还没跑就报 `OpenSSL configuration error ... Permission denied`。修法是自带 `etc/tls/openssl.cnf` 并在启动时注入 `OPENSSL_CONF` / `SSL_CERT_FILE` / `SSL_CERT_DIR`。这类问题在 x86 模拟器上往往复现不出来。
 
