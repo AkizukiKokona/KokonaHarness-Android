@@ -225,24 +225,29 @@ public class EngineService extends Service {
         acquireWakeLock();
         String step = "install";
         try {
-            publish(State.INSTALLING, null, getString(R.string.engine_installing), -1f);
+            publish(State.INSTALLING, null, getString(R.string.engine_installing), 0f);
+            // One continuous 0..1 for the whole boot, so the screen can show a
+            // single percentage instead of restarting the bar at every phase.
+            // Unpacking is the long part (0 - 0.7), the rest is startup prep.
             RuntimeInstaller.install(this, new RuntimeInstaller.Progress() {
                 @Override
                 public void onProgress(float fraction, String message) {
-                    publish(State.INSTALLING, null, message, fraction);
+                    publish(State.INSTALLING, null, message, fraction * 0.7f);
                 }
             });
             step = "runtime-patch";
+            publish(State.STARTING, null, "正在准备运行时…", 0.72f);
             ensureRuntimePatch();
             step = "official-settings";
             restoreOfficialSettings();
             step = "setthings-bundle";
             installSetthingsBundle();
             step = "seed-profile";
+            publish(State.STARTING, null, "正在准备插件…", 0.80f);
             seedProfile();
             if (stopping) return;
             step = "launch";
-            publish(State.STARTING, null, "正在启动引擎…", -1f);
+            publish(State.STARTING, null, "正在启动引擎…", 0.88f);
             launchProcess();
         } catch (final Throwable error) {
             Log.e(TAG, "engine failed at " + step, error);

@@ -1,7 +1,7 @@
 package com.kokonaharness.android.akizuki;
 
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -28,7 +28,7 @@ public final class ConfirmationGate {
     private static final int MAX_PENDING = 3;
 
     private static WeakReference<Activity> activityRef;
-    private static AlertDialog currentDialog;
+    private static Dialog currentDialog;
     private static volatile boolean visible;
     private static volatile long lastDialogAt;
 
@@ -54,7 +54,7 @@ public final class ConfirmationGate {
     }
 
     private static void dismissCurrent() {
-        AlertDialog dialog = currentDialog;
+        Dialog dialog = currentDialog;
         currentDialog = null;
         if (dialog != null) {
             MAIN.post(new Runnable() {
@@ -100,16 +100,18 @@ public final class ConfirmationGate {
                             latch.countDown();
                             return;
                         }
-                        AlertDialog.Builder builder = new AlertDialog.Builder(activity)
-                                .setTitle(critical ? "高风险手机操作" : "允许手机操作？")
-                                .setMessage(detail + "\n\n确认后将直接作用于当前手机界面。")
-                                .setCancelable(false)
-                                .setPositiveButton("允许", (dialog, which) -> {
+                        // Same visual language as the runtime's own prompts:
+                        // white card, black text, black "允许" button.
+                        final Dialog dialog = KhaDialog.create(activity,
+                                critical ? "高风险手机操作" : "允许手机操作？",
+                                detail + "\n\n确认后将直接作用于当前手机界面。")
+                                .primary("允许", () -> {
                                     allowed.set(true);
                                     latch.countDown();
                                 })
-                                .setNegativeButton("拒绝", (dialog, which) -> latch.countDown());
-                        final AlertDialog dialog = builder.create();
+                                .extra("拒绝", latch::countDown)
+                                .cancelable(false)
+                                .show();
                         currentDialog = dialog;
                         dialog.setOnDismissListener(d -> latch.countDown());
                         dialog.show();
@@ -131,7 +133,7 @@ public final class ConfirmationGate {
                 } catch (InterruptedException error) {
                     Thread.currentThread().interrupt();
                 }
-                AlertDialog dialog = currentDialog;
+                Dialog dialog = currentDialog;
                 currentDialog = null;
                 if (dialog != null && dialog.isShowing()) {
                     MAIN.post(new Runnable() {

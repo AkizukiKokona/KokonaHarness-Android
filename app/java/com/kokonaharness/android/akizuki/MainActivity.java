@@ -2,7 +2,6 @@ package com.kokonaharness.android.akizuki;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -429,19 +428,6 @@ public class MainActivity extends Activity {
     private View authClose;
     private TerminalOverlay terminalOverlay;
 
-    // Boot screen: the two version lines and the two-tier notice list. The
-    // hierarchy rule lives in BootNotices (one headline, everything else quiet).
-    private TextView versionsText;
-    private TextView primaryText;
-    private Button primaryAction;
-    private TextView secondaryToggle;
-    private LinearLayout secondaryBox;
-    private BootNotices bootNotices = new BootNotices();
-    private boolean noticesExpanded;
-
-    /** Set when the user picked accessibility mode but had to grant it first. */
-    private boolean pendingAccessibilityMode;
-
     private final Handler ui = new Handler(Looper.getMainLooper());
     private ValueCallback<Uri[]> fileCallback;
     private String pickRequestId;
@@ -453,7 +439,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    static final String APP_VERSION = "1.0.44rc3";
+    static final String APP_VERSION = "1.0.45";
 
     private EngineService.Listener engineListener;
 
@@ -526,111 +512,6 @@ public class MainActivity extends Activity {
         maybeCheckUpdates();
     }
 
-    /** DSH release bundled in the runtime, e.g. "0.2.2-rc.1". */
-    private static String dshVersion() {
-        return RuntimeInstaller.dshVersion();
-    }
-
-    /**
-     * Builds the two-tier notice list for the current state.
-     *
-     * <p>Order matters only until the first primary is taken: BootNotices demotes
-     * every later primary to the secondary list, so the headline is always a
-     * single item even if several blocking conditions are true at once.</p>
-     */
-    private void refreshBootNotices(EngineService.Snapshot snapshot) {
-        BootNotices notices = new BootNotices();
-        if (snapshot != null && (snapshot.state == EngineService.State.ERROR
-                || snapshot.state == EngineService.State.STOPPED)) {
-            notices.primary("引擎未运行，KHA 现在无法接收任务", "重试", new Runnable() {
-                @Override
-                public void run() {
-                    EngineService.restart(MainActivity.this);
-                }
-            });
-        }
-        if (RunMode.ACCESSIBILITY.equals(RunMode.mode(this))
-                && !RunMode.isAccessibilityEnabled(this)) {
-            notices.primary("已选无障碍模式，但无障碍服务未开启", "去开启", new Runnable() {
-                @Override
-                public void run() {
-                    RunMode.openAccessibilitySettings(MainActivity.this);
-                }
-            });
-        }
-        UpdateChecker.Result update = UpdateChecker.cached();
-        if (update.newer && !update.skipped) {
-            notices.secondary("KHA " + update.tag + " 可用", "查看", new Runnable() {
-                @Override
-                public void run() {
-                    showUpdateDialog();
-                }
-            });
-        }
-        if (!RunMode.isAccessibilityEnabled(this)) {
-            notices.secondary("无障碍服务未开启：界面自动化与截图不可用");
-        }
-        if (softwareRenderingPreferred()) {
-            notices.secondary("当前为软件渲染，画面更稳但滑动稍慢");
-        }
-        bootNotices = notices;
-        renderBootNotices();
-    }
-
-    private void renderBootNotices() {
-        if (primaryText == null) return;
-        BootNotices.Item headline = bootNotices.headline();
-        if (headline == null) {
-            primaryText.setVisibility(View.GONE);
-            primaryAction.setVisibility(View.GONE);
-        } else {
-            primaryText.setVisibility(View.VISIBLE);
-            primaryText.setText(headline.text);
-            if (headline.hasAction()) {
-                primaryAction.setVisibility(View.VISIBLE);
-                primaryAction.setText(headline.actionLabel);
-                primaryAction.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        headline.action.run();
-                    }
-                });
-            } else {
-                primaryAction.setVisibility(View.GONE);
-            }
-        }
-        final java.util.List<BootNotices.Item> secondary = bootNotices.secondaryItems();
-        secondaryBox.removeAllViews();
-        secondaryToggle.setVisibility(secondary.isEmpty() ? View.GONE : View.VISIBLE);
-        secondaryBox.setVisibility(secondary.isEmpty() || !noticesExpanded
-                ? View.GONE : View.VISIBLE);
-        if (!secondary.isEmpty()) {
-            secondaryToggle.setText(noticesExpanded
-                    ? "收起提示" : "还有 " + secondary.size() + " 条提示");
-            for (final BootNotices.Item item : secondary) {
-                TextView row = new TextView(this);
-                row.setText("·  " + item.text);
-                row.setTextColor(0xff9d968a);
-                row.setTextSize(12);
-                row.setGravity(Gravity.CENTER);
-                row.setPadding(dp(4), dp(3), dp(4), dp(3));
-                if (item.hasAction()) {
-                    row.setTextColor(0xffb9b2a2);
-                    row.setOnClickListener(new View.OnClickListener() {
-                        @Override
-                        public void onClick(View v) {
-                            item.action.run();
-                        }
-                    });
-                }
-                secondaryBox.addView(row);
-            }
-        }
-        if (versionsText != null) {
-            versionsText.setText("KHA 版本 " + APP_VERSION + "\nDSH 版本 " + dshVersion());
-        }
-    }
-
     /**
      * Startup update check. Silent when nothing is newer, when the user skipped
      * that tag, or when the network is unreachable -- an update must never be the
@@ -644,7 +525,6 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 UpdateChecker.Result result = UpdateChecker.cached();
-                refreshBootNotices(EngineService.current());
                 if (result.newer && !result.skipped) {
                     showUpdateDialog();
                 }
@@ -657,7 +537,11 @@ public class MainActivity extends Activity {
                 ? "GitHub" : "Codeberg";
     }
 
-    /** The notice dialog: notes first, then exactly three choices. */
+    /**
+     * The update notice: notes first, then exactly three choices. Rendered with
+     * {@link KhaDialog} so it looks like the runtime's own prompts instead of a
+     * platform dialog dropped into a DSH screen.
+     */
     private void showUpdateDialog() {
         final UpdateChecker.Result result = UpdateChecker.cached();
         if (result.tag == null || result.tag.isEmpty()) return;
@@ -666,22 +550,19 @@ public class MainActivity extends Activity {
         String message = (notes.isEmpty() ? "本次更新没有附加说明。" : notes)
                 + "\n\n当前 " + APP_VERSION + " → " + result.tag
                 + "（" + updateSourceLabel() + "）";
-        new AlertDialog.Builder(this)
-                .setTitle(Notices.TITLE)
-                .setMessage(message)
-                .setPositiveButton("立即更新", new android.content.DialogInterface.OnClickListener() {
+        KhaDialog.create(this, Notices.TITLE, message)
+                .primary("立即更新", new Runnable() {
                     @Override
-                    public void onClick(android.content.DialogInterface dialog, int which) {
+                    public void run() {
                         openUrlExternally(result.assetUrl);
                     }
                 })
-                .setNegativeButton("暂不更新", null)
-                .setNeutralButton("跳过这个版本", new android.content.DialogInterface.OnClickListener() {
+                .extra("暂不更新", null)
+                .extra("跳过这个版本", new Runnable() {
                     @Override
-                    public void onClick(android.content.DialogInterface dialog, int which) {
+                    public void run() {
                         UpdateChecker.skip(MainActivity.this, result.tag);
                         ToastCompat.show(MainActivity.this, "已跳过 " + result.tag);
-                        refreshBootNotices(EngineService.current());
                     }
                 })
                 .show();
@@ -739,20 +620,6 @@ public class MainActivity extends Activity {
         logoLp.bottomMargin = dp(16);
         overlay.addView(logo, logoLp);
 
-        // Two version lines, side by side in the same block. They answer two
-        // different questions -- which KHA build is installed, and which DSH
-        // runtime it bundles -- so neither may replace the other.
-        versionsText = new TextView(this);
-        versionsText.setTextColor(0xffcfc7b6);
-        versionsText.setTextSize(12);
-        versionsText.setGravity(Gravity.CENTER);
-        versionsText.setLineSpacing(dp(3), 1f);
-        versionsText.setText("KHA 版本 " + APP_VERSION + "\nDSH 版本 " + dshVersion());
-        LinearLayout.LayoutParams versionsLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        versionsLp.bottomMargin = dp(10);
-        overlay.addView(versionsText, versionsLp);
-
         progress = new ProgressBar(this);
         progress.setIndeterminate(true);
         progress.setIndeterminateTintList(
@@ -777,52 +644,6 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusLp.topMargin = dp(12);
         overlay.addView(statusText, statusLp);
-
-        // Primary notice: the one thing that needs a decision right now. It is
-        // the only element here with the accent colour and a large size, so a
-        // secondary hint can never read as equally urgent.
-        primaryText = new TextView(this);
-        primaryText.setVisibility(View.GONE);
-        primaryText.setTextColor(0xfff0c96a);
-        primaryText.setTextSize(15);
-        primaryText.setGravity(Gravity.CENTER);
-        primaryText.setPadding(dp(4), dp(14), dp(4), 0);
-        LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        overlay.addView(primaryText, primaryLp);
-
-        primaryAction = new Button(this);
-        primaryAction.setVisibility(View.GONE);
-        LinearLayout.LayoutParams primaryActionLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        primaryActionLp.topMargin = dp(6);
-        overlay.addView(primaryAction, primaryActionLp);
-
-        // Secondary notices stay collapsed behind a count, so the screen never
-        // becomes a wall of equally loud lines.
-        secondaryToggle = new TextView(this);
-        secondaryToggle.setVisibility(View.GONE);
-        secondaryToggle.setTextColor(0xff9d968a);
-        secondaryToggle.setTextSize(12);
-        secondaryToggle.setGravity(Gravity.CENTER);
-        secondaryToggle.setPadding(dp(4), dp(10), dp(4), dp(2));
-        secondaryToggle.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                noticesExpanded = !noticesExpanded;
-                renderBootNotices();
-            }
-        });
-        overlay.addView(secondaryToggle);
-
-        secondaryBox = new LinearLayout(this);
-        secondaryBox.setOrientation(LinearLayout.VERTICAL);
-        secondaryBox.setVisibility(View.GONE);
-        secondaryBox.setGravity(Gravity.CENTER_HORIZONTAL);
-        LinearLayout.LayoutParams secondaryLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        secondaryLp.topMargin = dp(4);
-        overlay.addView(secondaryBox, secondaryLp);
 
         retryButton = new Button(this);
         retryButton.setText(R.string.retry);
@@ -1044,24 +865,31 @@ public class MainActivity extends Activity {
     }
 
     private void applyState(EngineService.Snapshot snapshot) {
-        refreshBootNotices(snapshot);
+        // One boot screen, one job: say what is happening and how far along it
+        // is. Everything else (versions, hints, notices) lives in the runtime UI
+        // or the settings page, not here.
         switch (snapshot.state) {
             case INSTALLING:
-                overlay.setVisibility(View.VISIBLE);
-                retryButton.setVisibility(View.GONE);
-                String installing = snapshot.message != null
-                        ? snapshot.message : getString(R.string.engine_installing);
-                if (snapshot.progress >= 0f) {
-                    installing = installing + " "
-                            + Math.min(100, (int) Math.round(snapshot.progress * 100f)) + "%";
-                }
-                statusText.setText(installing);
-                break;
             case STARTING:
                 overlay.setVisibility(View.VISIBLE);
                 retryButton.setVisibility(View.GONE);
-                statusText.setText(snapshot.message != null
-                        ? snapshot.message : getString(R.string.engine_starting));
+                copyButton.setVisibility(View.GONE);
+                shareButton.setVisibility(View.GONE);
+                renderButton.setVisibility(View.GONE);
+                String label = snapshot.message != null ? snapshot.message
+                        : snapshot.state == EngineService.State.INSTALLING
+                                ? getString(R.string.engine_installing)
+                                : getString(R.string.engine_starting);
+                if (snapshot.progress >= 0f) {
+                    label = label + " "
+                            + Math.min(100, (int) Math.round(snapshot.progress * 100f)) + "%";
+                    progress.setIndeterminate(false);
+                    progress.setProgress(Math.round(snapshot.progress * 100f));
+                } else {
+                    progress.setIndeterminate(true);
+                    progress.setProgress(0);
+                }
+                statusText.setText(label);
                 break;
             case READY:
                 statusText.setText("正在加载界面…");
@@ -1495,17 +1323,6 @@ public class MainActivity extends Activity {
             pendingPickResult = null;
             deliverPick(script);
         }
-        // Coming back from the system accessibility page: apply the mode the user
-        // actually asked for, now that the service is on. If they did not grant
-        // it, nothing changes and no extra dialog appears (they just said no).
-        if (pendingAccessibilityMode) {
-            pendingAccessibilityMode = false;
-            if (RunMode.isAccessibilityEnabled(this)) {
-                RunMode.setMode(this, RunMode.ACCESSIBILITY);
-                ToastCompat.show(this, "已切换到无障碍模式");
-                refreshBootNotices(EngineService.current());
-            }
-        }
     }
 
     @Override
@@ -1547,8 +1364,7 @@ public class MainActivity extends Activity {
             UpdateChecker.checkAsync(MainActivity.this, APP_VERSION, true, new Runnable() {
                 @Override
                 public void run() {
-                    refreshBootNotices(EngineService.current());
-                }
+                    }
             });
         }
 
@@ -1557,8 +1373,7 @@ public class MainActivity extends Activity {
             UpdateChecker.checkAsync(MainActivity.this, APP_VERSION, true, new Runnable() {
                 @Override
                 public void run() {
-                    refreshBootNotices(EngineService.current());
-                }
+                    }
             });
         }
 
@@ -1571,7 +1386,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void skipUpdate(final String tag) {
             UpdateChecker.skip(MainActivity.this, tag);
-            refreshBootNotices(EngineService.current());
         }
 
         @JavascriptInterface
@@ -1711,9 +1525,11 @@ public class MainActivity extends Activity {
          * <ul>
          *   <li>back to normal: takes privileges away, applies immediately and
          *       never asks -- a confirmation here was pure friction;</li>
-         *   <li>accessibility: only meaningful once the service is on, so an
-         *       unprivileged user is sent to grant it instead of quietly getting
-         *       a mode that cannot do anything;</li>
+         *   <li>accessibility without the service on: falls back to normal
+         *       silently. The service has to be granted in the system settings
+         *       anyway (and re-granted after the app restarts), so a dialog in
+         *       between adds a step without adding information; the settings
+         *       row states both facts instead;</li>
          *   <li>advanced: hands the engine Root/Shizuku, so this one confirms.</li>
          * </ul>
          */
@@ -1727,35 +1543,17 @@ public class MainActivity extends Activity {
                 applyRunMode(mode);
                 return;
             }
-            if (RunMode.ACCESSIBILITY.equals(mode)) {
-                if (!RunMode.isAccessibilityEnabled(MainActivity.this)) {
-                    requestAccessibilityForMode();
-                    return;
-                }
-                applyRunMode(mode);
+            if (RunMode.ACCESSIBILITY.equals(mode)
+                    && !RunMode.isAccessibilityEnabled(MainActivity.this)) {
+                // Silent fallback: stay on normal, say so once, move on.
+                ToastCompat.show(MainActivity.this, "无障碍服务未开启，已保持普通模式");
                 return;
             }
-            if (!confirmSensitive("高级模式会通过 Root/Shizuku 执行命令，切换后引擎会重启。继续？")) {
+            if (RunMode.ADVANCED.equals(mode)
+                    && !confirmSensitive("高级模式会通过 Root/Shizuku 执行命令，切换后引擎会重启。继续？")) {
                 return;
             }
             applyRunMode(mode);
-        }
-
-        private void requestAccessibilityForMode() {
-            new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("需要先开启无障碍服务")
-                    .setMessage("无障碍模式依赖系统无障碍服务。开启并返回后会自动切换到该模式；现在仍按普通模式运行。")
-                    .setPositiveButton("去开启",
-                            new android.content.DialogInterface.OnClickListener() {
-                                @Override
-                                public void onClick(android.content.DialogInterface dialog,
-                                                    int which) {
-                                    pendingAccessibilityMode = true;
-                                    RunMode.openAccessibilitySettings(MainActivity.this);
-                                }
-                            })
-                    .setNegativeButton("取消", null)
-                    .show();
         }
 
         private void applyRunMode(final String mode) {
@@ -1779,8 +1577,7 @@ public class MainActivity extends Activity {
                         if (!currentChannel.equals(previousChannel)) {
                             EngineService.restart(MainActivity.this);
                         }
-                        refreshBootNotices(EngineService.current());
-                    }
+                            }
                 }
             });
         }
