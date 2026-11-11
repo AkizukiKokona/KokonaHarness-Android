@@ -37,15 +37,20 @@ kokona-grun -- ./binary --flag        # 参数以 - 开头时用 -- 分隔
 - `--exec` 跳过全部环境准备；`--shell` 一次准备后从 stdin 逐行读取命令连续执行。
 - 会话内多次运行同一程序时环境已就绪，无额外成本。
 
-### 第一个参数必须是路径，不能是裸命令名
+### 程序可以是路径，也可以写成 prefix bin/ 下的裸命令名
 
-`kokona-grun` 把参数直接交给 loader，**loader 不做 `PATH` 查找**：
+`kokona-grun <program>` 的解析规则（launcher 在 `execve` 前完成，**不依赖 loader 的 PATH 查找**）：
+
+- 参数**含 `/`**（绝对或相对路径）→ **原样**交给 loader，绝不干预。
+- 参数**不含 `/`** → 拼接为 `<prefix>/bin/<program>` 再执行；目标不存在或不可执行时保持原样，由 loader 报原来的 `No such file or directory`（rc=127），不会多出一层误报。
 
 ```bash
-kokona-grun getconf LONG_BIT     # ✗ rc=127，getconf: No such file or directory
-kokona-grun ./getconf LONG_BIT   # ✓ 但 glibc 的 bin 不在 PATH，仍可能找不到
-kgetconf LONG_BIT                # ✓ 推荐：用 k 前缀启动器
+kokona-grun getconf LONG_BIT     # ✓ 64，裸名自动解析到 <prefix>/bin/getconf
+kokona-grun ./getconf LONG_BIT   # ✓ 显式相对路径，按原样执行
+kgetconf LONG_BIT                # ✓ 等价的 k 前缀启动器
 ```
+
+> loader 自身不做 `PATH` 查找；裸名的解析由 launcher 完成，所以上面两种写法都能跑。
 
 ### glibc 工具用 `k` 前缀名
 
@@ -62,6 +67,8 @@ kgetconf LONG_BIT                # ✓ 推荐：用 k 前缀启动器
 | `kpldd` | pldd（列出进程加载的共享库） |
 
 这些启动器都在 `KokonaRuntime/bin`，**它们是同一个 ELF 的实体副本**（`app/native/kokona-run.c`），由 `argv[0]` 决定跑哪个工具。设备端 tar 解包器会跳过符号链接/硬链接，所以不能用链接省空间。可直接在 `PATH` 里调用。
+
+> `prefix/bin/ldd` 是 shell 脚本，直接经 `kokona-grun` 运行会报 `invalid ELF header`（rc 仍为 0，容易误导）；查动态依赖请用 `kldd`。
 
 ## 性能特征
 

@@ -442,7 +442,7 @@ public class MainActivity extends Activity {
     /** Last IME (keyboard) height in px reported by the window insets; re-sent to the page after it loads. */
     private int lastImeHeight = 0;
 
-    static final String APP_VERSION = "1.1.3";
+    static final String APP_VERSION = "1.1.4";
 
     private EngineService.Listener engineListener;
 

@@ -273,6 +273,7 @@ static void show_help(void) {
     puts("<program> is a path or a basename resolved under prefix bin/; the loader");
     puts("does not search the shell PATH.");
     puts("glibc tools: kiconv kgetent kgetconf klocale kldd kgencat kpldd");
+    puts("note: prefix/bin/ldd is a shell script and fails through the loader; use kldd.");
     puts("");
     puts("--exec  : skip the DNS and locale preparation. Both modes run in roughly");
     puts("          15 ms, so the speed difference is usually negligible; --exec is");
@@ -360,6 +361,27 @@ int main(int argc, char **argv) {
     if (!alias && n > 0 && strcmp(args[0], "--shell") == 0) { shell = 1; args++; n--; }
     if (n > 0 && strcmp(args[0], "--") == 0) { args++; n--; }
 
+    /* Direction A: a bare program name (no '/') is resolved to <prefix>/bin/<name>
+     * before exec, because the loader treats a bare name as a relative path and
+     * never searches PATH. If the resolved target is missing or not executable,
+     * leave the argument untouched so the loader keeps its original error
+     * semantics (no extra ENOENT message). Paths containing '/' are never touched. */
+    char *bare = NULL;
+    if (!alias && n > 0 && strchr(args[0], '/') == NULL) {
+        size_t need = strlen(G) + 5 + strlen(args[0]) + 1;
+        bare = malloc(need);
+        if (bare) {
+            snprintf(bare, need, "%s/bin/%s", G, args[0]);
+            struct stat st;
+            if (stat(bare, &st) == 0 && S_ISREG(st.st_mode) && access(bare, X_OK) == 0) {
+                args[0] = bare;
+            } else {
+                free(bare);
+                bare = NULL;
+            }
+        }
+    }
+
     if (!fast) {
         prepare_dns();
         prepare_locale();
@@ -388,9 +410,10 @@ int main(int argc, char **argv) {
     }
 
     char **nav = build_argv(alias, n, args);
-    if (!nav) return 127;
+    if (!nav) { free(bare); return 127; }
     execv(LOADER, nav);
     fprintf(stderr, "kokona-run: cannot exec %s: %s\n", LOADER, strerror(errno));
     free(nav);
+    free(bare);
     return 127;
 }

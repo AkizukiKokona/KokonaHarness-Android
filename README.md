@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.1.3**（152）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r42**
+> Android 8.1+ · arm64 · 当前 **1.1.4**（153）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r43**
 
 ## 实测性能：在手表上跑赢系统原生程序
 
@@ -266,7 +266,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 152 / versionName 1.1.3
+│   ├── AndroidManifest.xml        # versionCode 153 / versionName 1.1.4
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -367,14 +367,16 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.1.3**（versionCode 152）
+- App：**1.1.4**（versionCode 153）
 - DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r42**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r43**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.1.3（本次）**：**WebView 键盘避让**——原生侧改用 `WindowInsets`（API 30+ 取 `Type.ime()` 精确高度，低于 30 回落 `getSystemWindowInsetBottom`）在根视图监听键盘，经 `evaluateJavascript` 注入 `window.onKeyboardHeight(<px>)` 把高度推给网页；网页据此给 body 加 `padding-bottom` 并复用 `--kn-keyboard-inset`，聚焦输入框 `scrollIntoView({block:'center'})`。原生不再给 WebView 加底部 padding（单一来源，杜绝双重留白），也不依赖旧系统 WebView（Chrome/131，低于 M139）的 `visualViewport` resize。**R3 收尾**：`glibc-runtime/SKILL.md` 新增「getconf 变量限制」小节，明确 `PATH_SEPARATOR` 不可用并列出已确认可用的 7 个变量。运行时 r41 不变（仅 App 侧改动）。
+**1.1.4（本次）**：修 `kokona-grun` 的裸命令名解析与 `--help` 文案不一致。此前 `kokona-grun getconf LONG_BIT` 把 `getconf` 当相对路径直接交给 loader，报 `cannot open shared object file: getconf`（rc=127）；现 launcher 在 `execve` 前把**不含 `/`** 的参数解析为 `<prefix>/bin/<name>`（先确认存在且可执行；否则保持原样、由 loader 报原语义，不新增 ENOENT 误报），**含 `/`** 的路径原样传递。`--help` 与 `glibc-runtime/SKILL.md` 已同步改写，消除「必须写路径」与「裸名解析」的矛盾；并注明 `prefix/bin/ldd` 是 shell 脚本、查依赖请用 `kldd`。运行时 r43（launcher 与 SKILL.md 均更新，升级需重解压一次）。
+
+**1.1.3**：**WebView 键盘避让**——原生侧改用 `WindowInsets`（API 30+ 取 `Type.ime()` 精确高度，低于 30 回落 `getSystemWindowInsetBottom`）在根视图监听键盘，经 `evaluateJavascript` 注入 `window.onKeyboardHeight(<px>)` 把高度推给网页；网页据此给 body 加 `padding-bottom` 并复用 `--kn-keyboard-inset`，聚焦输入框 `scrollIntoView({block:'center'})`。原生不再给 WebView 加底部 padding（单一来源，杜绝双重留白），也不依赖旧系统 WebView（Chrome/131，低于 M139）的 `visualViewport` resize。**R3 收尾**：`glibc-runtime/SKILL.md` 新增「getconf 变量限制」小节，明确 `PATH_SEPARATOR` 不可用并列出已确认可用的 7 个变量。运行时 r41 不变（仅 App 侧改动）。
 
 **1.1.2**：修 r40 回归。**R1（发行阻断）**：CPython 扩展模块 `_sqlite3`/`_ssl`/`_hashlib` 依赖的 `libsqlite3_python.so`/`libssl_python.so`/`libcrypto_python.so` 此前漏打（打包只拷了 `libpython3.15.so`），导致 `import sqlite3`/`import ssl` 报 "library lib*_python.so not found"；现从原始交叉构建 prefix 补进 `lib/`。`ensurepip` 自带的 `pip-26.2.2-py3-none-any.whl` 此前未解包，`pip` 不可用；现解压进 `site-packages`，`python -m pip` 可用。**R2**：`--shell` 原把每行直接当程序路径 exec，无解析；现跳过空行与 `#` 注释、按空白切分参数、bare 命令名解析到 `$G/bin`，`--help` 写清语义（它**不是** shell）。**R3**：`glibc-runtime/SKILL.md` 明确标注 `getconf PATH_SEPARATOR` 在 glibc 2.44 下已确认不可用（用字面 `:` 代替）。打包新增强制自检：扫描全部 `lib-dynload` 模块的 `DT_NEEDED`，任一依赖不在 `lib/` 且非 Android 系统库则构建失败；并校验 `site-packages/pip` 存在、`python3.15` 为 0755。
 
