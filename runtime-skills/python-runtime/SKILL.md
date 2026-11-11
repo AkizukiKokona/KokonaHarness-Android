@@ -19,7 +19,7 @@ pip install --user requests
 
 - 依赖请装进 venv 或 `pip install --user`，不要改动运行时自带的 `site-packages`，否则升级运行时会被覆盖。
 - `SSL_CERT_FILE` 已指向内置 CA，`https` 请求可直接用。
-- 已内置：`ssl`、`sqlite3`、`ctypes`（libffi）、`zlib`、`bz2`、`lzma`、`curses`、`readline`、`pyexpat`、`hashlib`（openssl）。
+- 已内置：`ssl`、`sqlite3`、`ctypes`（libffi）、`zlib`、`bz2`、`lzma`、`pyexpat`、`hashlib`（openssl）。
 
 ## 限制
 
@@ -27,4 +27,5 @@ pip install --user requests
 - 只装纯 Python 包或 `py3-none-any` wheel；manylinux/linux wheel 与 Android 不兼容（bionic 与 glibc 的符号/路径不同）。
 - CPython 在 Android 上禁用了 `_multiprocessing` 与 `_posixshmem`（bionic 无 `sem_open`/`shm_open`）。用 `threading`、`asyncio` 或 `subprocess` 代替。
 - 没有 `tkinter`（Android 无 Tk）；`idlelib`、`test` 与 `turtledemo` 已从运行时裁剪。
+- `curses` 与 `readline` **未内置**：`import curses` 报 `No module named '_curses'`，`import readline` 报 `No module named 'readline'`。需要行编辑或全屏终端界面的库请自行准备纯 Python 替代方案，或改用批量/非交互方式。
 - 平台标签为 `android-27-arm64_v8a`，判断 wheel 兼容性时以它为准。

@@ -54,7 +54,7 @@ public class NotificationAccessService extends NotificationListenerService {
     public static String listJson() throws Exception {
         NotificationAccessService service = instance;
         if (service == null) {
-            throw new IllegalStateException("通知使用权未开启，请在 环境高级设置 中开启");
+            throw new IllegalStateException("通知使用权未开启：请在系统设置「通知使用权」里勾选 KHA（可用 android_open_settings panel=notification_listener 直达）");
         }
         StatusBarNotification[] active = service.getActiveNotifications();
         if (active == null) active = new StatusBarNotification[0];

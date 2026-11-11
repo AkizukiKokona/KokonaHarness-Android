@@ -103,7 +103,7 @@ public class ScreenshotAccessibilityService extends AccessibilityService {
         }
         if (Build.VERSION.SDK_INT < 30) {
             throw new IllegalStateException("当前系统 Android " + Build.VERSION.SDK_INT
-                    + " 低于 Android 11，无障碍截图不可用；请勿重试，改用 android_ui 获取界面信息");
+                    + " 低于 Android 11，无障碍截图不可用；应改走 MediaProjection 路径");
         }
         final CountDownLatch done = new CountDownLatch(1);
         final AtomicReference<Bitmap> bitmap = new AtomicReference<>();

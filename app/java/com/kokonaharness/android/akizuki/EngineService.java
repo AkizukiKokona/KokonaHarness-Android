@@ -1074,6 +1074,13 @@ public class EngineService extends Service {
         env.put("LC_ALL", "en_US.UTF-8");
         env.put("SHELL", runtimePath + "/bin/bash");
         env.put("SSL_CERT_FILE", runtimePath + "/etc/tls/cert.pem");
+        // The bundled git was linked against Termux's OpenSSL and has
+        // /data/data/com.termux/files/usr/etc/tls/cert.pem compiled in as its
+        // trust anchor, which does not exist under this package, so every HTTPS
+        // remote failed at the TLS handshake ("error adding trust anchors"). git
+        // honours GIT_SSL_CAINFO over that baked-in path; point it at the same
+        // bundle the rest of the runtime uses.
+        env.put("GIT_SSL_CAINFO", runtimePath + "/etc/tls/cert.pem");
         // libcrypto.so.3 was built for Termux and has
         // /data/data/com.termux/files/usr/etc/tls compiled in as OPENSSLDIR.
         // OpenSSL reads openssl.cnf from that directory while initialising and

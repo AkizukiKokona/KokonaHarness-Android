@@ -442,7 +442,15 @@ public class MainActivity extends Activity {
     /** Last IME (keyboard) height in px reported by the window insets; re-sent to the page after it loads. */
     private int lastImeHeight = 0;
 
-    static final String APP_VERSION = "1.1.4";
+    /** The live activity; the loopback bridge uses it to run MediaProjection capture. */
+    private static volatile MainActivity currentActivity;
+
+    /** Current activity, or null. Used by LocalBridgeServer for /screenshot on API < 30. */
+    public static MainActivity current() {
+        return currentActivity;
+    }
+
+    static final String APP_VERSION = "1.1.5";
 
     private EngineService.Listener engineListener;
 
@@ -479,6 +487,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        currentActivity = this;
         // Allows measuring the real page from adb during development. Gated on the
         // debuggable flag so a release build never exposes its WebView.
         // Allows inspecting the page from chrome://inspect. A release build is
@@ -1092,6 +1101,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == MediaProjectionCapture.REQUEST_CODE) {
+            MediaProjectionCapture.deliverResult(resultCode, data);
+            return;
+        }
         if (requestCode == REQ_FILE) {
             if (fileCallback == null) return;
             Uri[] result = null;
@@ -1380,6 +1393,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (currentActivity == this) currentActivity = null;
         if (terminalOverlay != null) terminalOverlay.hide();
         try {
             Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener);

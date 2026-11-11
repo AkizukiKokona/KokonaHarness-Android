@@ -108,12 +108,17 @@ async function callBridge(path, params = {}, timeoutMs = 20000) {
     signal: AbortSignal.timeout(timeoutMs)
   });
   if (!response.ok) {
+    // Read the body ONCE. response.json() consumes the stream even when parsing
+    // fails, so the old json()-then-text() fallback read an already-consumed
+    // body and surfaced "Body is unusable: Body has already been read" instead
+    // of the real message (e.g. the SDK<30 screenshot hint).
+    const raw = await response.text();
     let message = `HTTP ${response.status}`;
     try {
-      const body = await response.json();
+      const body = JSON.parse(raw);
       if (body && body.error) message = body.error;
     } catch {
-      message = (await response.text()) || message;
+      if (raw) message = raw;
     }
     throw new Error(message);
   }
@@ -133,7 +138,7 @@ const TOOLS = [
   },
   {
     name: "android_screenshot",
-    description: "截取当前屏幕并直接返回图片。仅 Android 11+ 且无障碍服务已开启时可用；低于 Android 11 会失败，请勿重试，改用 android_ui 读取界面。",
+    description: "截取当前屏幕并直接返回图片。Android 11+ 走无障碍（需已开启）；低于 11 走 MediaProjection：会弹出系统授权框，请允许。FLAG_SECURE 窗口截出来是黑屏，属系统行为。",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
   {
@@ -191,7 +196,7 @@ const TOOLS = [
   },
   {
     name: "android_global",
-    description: "执行系统全局操作：返回、桌面、最近任务、通知栏、快捷设置、电源菜单、锁屏、系统截屏。screenshot 仅 Android 11+，低版本请勿调用。",
+    description: "执行系统全局操作：返回、桌面、最近任务、通知栏、快捷设置、电源菜单、锁屏、系统截屏。screenshot 仅 Android 11+；低于 11 请用 android_screenshot（MediaProjection 授权截图）。",
     inputSchema: {
       type: "object",
       properties: {
@@ -428,13 +433,13 @@ const TOOLS = [
   },
   {
     name: "android_open_settings",
-    description: "直接打开系统设置面板：wifi、bluetooth、battery、display、sound、storage、accessibility、notification、usage、app、write_settings 等。",
+    description: "直接打开系统设置面板：wifi、bluetooth、battery、display、sound、storage、accessibility、notification（=通知使用权）、notification_listener、usage、app、write_settings 等。",
     inputSchema: {
       type: "object",
       properties: {
         panel: {
           type: "string",
-          enum: ["settings", "wifi", "bluetooth", "data", "airplane", "battery", "display", "sound", "storage", "accessibility", "notification", "usage", "default_apps", "location", "security", "locale", "input_method", "home", "nfc", "date", "developer", "vpn", "device", "write_settings", "app"]
+          enum: ["settings", "wifi", "bluetooth", "data", "airplane", "battery", "display", "sound", "storage", "accessibility", "notification", "notification_listener", "usage", "default_apps", "location", "security", "locale", "input_method", "home", "nfc", "date", "developer", "vpn", "device", "write_settings", "app"]
         },
         package: { type: "string", description: "panel=app 时目标应用包名" }
       },
@@ -539,7 +544,10 @@ async function runTool(name, args = {}) {
   }
   const auth = await authorize(name, args);
   if (name === "android_screenshot") {
-    const response = await callBridge("/screenshot", auth);
+    // SDK<30 captures through MediaProjection, which waits for a system consent
+    // dialog; allow well over the default 20s so a slow human approval does not
+    // abort the fetch while the capture thread is still waiting.
+    const response = await callBridge("/screenshot", auth, 90000);
     const buffer = Buffer.from(await response.arrayBuffer());
     return {
       content: [{ type: "image", data: buffer.toString("base64"), mimeType: "image/png" }]

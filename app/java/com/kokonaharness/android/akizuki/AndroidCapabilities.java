@@ -708,7 +708,7 @@ public final class AndroidCapabilities {
             case "screenshot":
                 if (Build.VERSION.SDK_INT < 30) {
                     throw new IllegalStateException("当前系统 Android " + Build.VERSION.SDK_INT
-                            + " 低于 Android 11，无障碍系统截屏不可用；请勿重试，改用 android_ui 获取界面信息");
+                            + " 低于 Android 11：系统全局截屏动作不可用，请改用 android_screenshot（会走 MediaProjection 授权截图）");
                 }
                 action = AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT;
                 break;
@@ -869,7 +869,8 @@ public final class AndroidCapabilities {
             case "storage": intent = new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS); break;
             case "accessibility": intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS); break;
             case "notification":
-                intent = new Intent("android.settings.NOTIFICATION_LISTENER_SETTINGS");
+            case "notification_listener":
+                intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
                 break;
             case "usage": intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS); break;
             case "default_apps":
@@ -969,7 +970,7 @@ public final class AndroidCapabilities {
         try {
             sessions = manager.getActiveSessions(listener);
         } catch (SecurityException error) {
-            throw new IllegalStateException("需要通知使用权才能读取媒体会话，请在 环境高级设置 中开启");
+            throw new IllegalStateException("需要通知使用权才能读取媒体会话：请在系统设置「通知使用权」里勾选 KHA（可用 android_open_settings panel=notification_listener 直达）");
         }
         if (sessions == null) sessions = new ArrayList<>();
         String command = uri.getQueryParameter("command");

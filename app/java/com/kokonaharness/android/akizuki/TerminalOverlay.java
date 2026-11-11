@@ -261,6 +261,9 @@ final class TerminalOverlay {
             env.put("LC_ALL", "en_US.UTF-8");
             env.put("SHELL", rt + "/bin/bash");
             env.put("SSL_CERT_FILE", rt + "/etc/tls/cert.pem");
+            // git's compiled-in trust anchor is a Termux path that does not
+            // exist here; without this, HTTPS remotes fail in the terminal too.
+            env.put("GIT_SSL_CAINFO", rt + "/etc/tls/cert.pem");
             env.put("OPENSSL_CONF", rt + "/etc/tls/openssl.cnf");
             env.put("SSL_CERT_DIR", rt + "/etc/tls");
             env.put("npm_config_registry", "https://registry.npmmirror.com");

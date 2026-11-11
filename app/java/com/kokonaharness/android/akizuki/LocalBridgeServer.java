@@ -2,6 +2,7 @@ package com.kokonaharness.android.akizuki;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.Build;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -319,7 +320,15 @@ public final class LocalBridgeServer {
                     return;
                 }
                 try {
-                    byte[] png = ScreenshotAccessibilityService.capture();
+                    byte[] png;
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        png = ScreenshotAccessibilityService.capture();
+                    } else {
+                        // API 28-29: AccessibilityService.takeScreenshot() does
+                        // not exist. Capture through MediaProjection (the user
+                        // approves one system dialog) and return the frame.
+                        png = MediaProjectionCapture.capture(MainActivity.current());
+                    }
                     respond(socket, 200, "image/png", png);
                 } catch (Throwable error) {
                     String message = error.getMessage() == null

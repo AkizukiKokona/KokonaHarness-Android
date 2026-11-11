@@ -69,6 +69,8 @@ kgetconf LONG_BIT                # ✓ 等价的 k 前缀启动器
 这些启动器都在 `KokonaRuntime/bin`，**它们是同一个 ELF 的实体副本**（`app/native/kokona-run.c`），由 `argv[0]` 决定跑哪个工具。设备端 tar 解包器会跳过符号链接/硬链接，所以不能用链接省空间。可直接在 `PATH` 里调用。
 
 > `prefix/bin/ldd` 是 shell 脚本，直接经 `kokona-grun` 运行会报 `invalid ELF header`（rc 仍为 0，容易误导）；查动态依赖请用 `kldd`。
+>
+> `kldd` **只适用于 glibc 链接的 ELF**。bionic 程序（interpreter 为 `/system/bin/linker64`）不要用 `kldd`——它的 loader 与 glibc loader 不兼容，`--list` 会失败。先用 `file` 看解释器：`/lib/ld-linux-aarch64.so.1` 才是 glibc 目标。
 
 ## 性能特征
 
