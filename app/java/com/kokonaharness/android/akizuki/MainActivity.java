@@ -439,7 +439,7 @@ public class MainActivity extends Activity {
     private boolean webLoaded;
     private String activeUrl;
 
-    static final String APP_VERSION = "1.0.48";
+    static final String APP_VERSION = "1.1.0";
 
     private EngineService.Listener engineListener;
 

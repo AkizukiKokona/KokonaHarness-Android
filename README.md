@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.0.48**（148）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r38**
+> Android 8.1+ · arm64 · 当前 **1.1.0**（149）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r39**
 
 ## 路线：从引擎到兼容层，全程不用 PRoot
 
@@ -136,7 +136,7 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 
 **定位**：九项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
 
-已实施（1.0.48）：
+已实施（1.1.0）：
 
 1. **桥接双重校验**：MCP 先按能力判断，Java 侧 `/plus` 再用自己的 `action → capability` 映射复核；能力声明不匹配、未知 action 一律 403。`deny` 在 App 侧最终生效，过期授权无法复活。
 2. **一次性审批凭据**：`ask` 由 `/confirm` 在用户点「允许」后签发随机 grant，绑定能力、120 秒过期、单次消费；`/plus` 必须携带且校验通过才执行。
@@ -230,7 +230,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 148 / versionName 1.0.48
+│   ├── AndroidManifest.xml        # versionCode 149 / versionName 1.1.0
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -275,6 +275,8 @@ KokonaHarness-Android/
 
 <details>
 <summary>展开开发记录</summary>
+
+**1.1.0**（运行时 r39）把 `kokona-grun` 从 170 行 sh 包装脚本**整个换成原生 ELF launcher** （`app/native/kokona-run.c`）：进程内完成 DNS 校验、locale、前缀与环境准备，最后一次 `execve()` 直达 glibc loader，**没有 toybox sh、没有 fork、没有外部命令**。设备实测旧脚本单次 175–192ms，其中 65% 花在 `dirname`/`tr`/`getprop`/`cd+pwd` 的 fork+exec 上；同一程序裸 loader 只要 6ms、bionic 基线 26ms——瓶颈从来不是 glibc。七个 `k*` 工具改成同一个 ELF 按 `argv[0]` 分派（设备端 tar 会丢链接，所以是实体副本），新增 `--exec`（跳过准备）与 `--shell`（一次准备、连续跑多个程序）。同批修掉：无 locale 数据时 `LANG`/`LC_ALL` 一起强制为 C（消除 `locale` 的三行 `Cannot set LC_*`）、DNS 先比对再写（`resolv.conf` 的 mtime 不再无故变化）、热路径彻底不调 `getprop`、`--version`/`--help` 给友好输出。另把「打开目录」统一按平台分派：Android 走系统文件管理器 （`ACTION_VIEW` + externalstorage 文档 URI），Windows / WSL / macOS 行为一行未动；补上 `KOKONA_ANDROID=1` 供运行时判定平台（Node 在 Android 上也报 `linux`）。版本号 1.1.0 / versionCode 149，正式发行版。
 
 **1.0.48**（运行时 r38）`kldd` 连修三轮才走对：`kokona-glibc/bin/ldd` 是 `/system/bin/sh` 脚本，r36 把它交给 loader → `invalid ELF header`；r37 改用 `/system/bin/sh` 却顺手导出了 `LD_LIBRARY_PATH`，bionic 的 sh 自己去加载 glibc 的 `libc.so`（链接脚本）→ `bad ELF magic`。现在**绕开脚本**，直接用 loader 自带的 `--list` 模式，`--library-path` 同时带上前缀与 `~/.local/lib/kokona-glibc`，补充库照样解析，且**一个环境变量都不碰**（skill 里那条禁令就是这么来的）。同批还修了 `dns.servers` 逐行校验与多条 nameserver 拼成一行的老问题、无障碍未授权时改为打开系统设置页、开屏改成分阶段反馈：解压阶段有真实字节进度，显示连续百分比；启动引擎阶段没有可测进度，只保留转圈与「（没有卡死喵）」安抚文字，不再出现 0→88→100 那种跳数字。版本号 1.0.48（versionCode 148），本轮为本地试装包，未发 Release。
 
@@ -323,7 +325,7 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.0.48**（versionCode 148）
+- App：**1.1.0**（versionCode 149）
 - DSH：**0.2.2-rc.1**
 - KokonaRuntime：**dsh-0.2.2-rc.1-r33**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`

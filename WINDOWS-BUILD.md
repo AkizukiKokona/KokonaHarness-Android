@@ -130,6 +130,15 @@ tar -C "$SRC" --exclude=... -cf - . | tar -C "$DST" -xf -
 mkdir -p out39 && cp out/kokona.keystore out39/kokona.keystore
 ```
 
+### 8.2 原生 launcher 是预编译入库的
+
+`app/assets/kokona-run` 是 aarch64 bionic ELF（约 15 KB），由 `app/native/kokona-run.c`
+编译而来，`build-runtime.sh` 会把它复制成 `kokona-grun` 与七个 `k*` 工具。
+从仓库自行构建**不需要 NDK**：预编译二进制已入库，直接跑 `build-runtime.sh` 即可。
+若要改 C 源码，用 NDK 27 的 `aarch64-linux-android24-clang` 重编（命令见
+`glibc-run/README.md` 开头），或直接用宿主 gcc + `KOKONA_DRY_RUN=1` 验证逻辑。
+注意它是**动态链接 bionic linker64** 的 ELF，别误当成 Windows 可执行文件。
+
 ## 9. WebView 注入脚本（SHIM）的本地校验
 
 `MainActivity.SHIM` 是由上百个 Java 字符串字面量拼出来的 JS，语法错一次要到真机上才发现。`tools/check-shim.cjs` 按 javac 语义跳过 `//` 与 `/* */` 注释、只拼接字符串字面量，再用 `new Function(js)` 校验：

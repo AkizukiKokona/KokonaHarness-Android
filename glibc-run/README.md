@@ -1,3 +1,18 @@
+> **1.1.0 起 grun 是原生 ELF，不再是脚本。** `app/native/kokona-run.c` 编译成
+> `app/assets/kokona-run`，`build-runtime.sh` 把它复制成 `bin/kokona-grun` 与
+> `bin/k*` 九个实体副本（设备端 tar 解包器会跳过链接）。`argv[0]` 决定分派，
+> `KOKONA_GLIBC` 覆盖编译期前缀常量。下面第 11 条的 r36/r37/r38 三轮记录保留
+> 作为历史：ELF launcher 里已经没有 `ldd` 脚本、没有 `/system/bin/sh`、也没有
+> `LD_LIBRARY_PATH`，`kldd` 直接走 loader 的 `--list`。
+>
+> 重新编译（NDK 27，Linux/WSL 侧）：
+> ```bash
+> aarch64-linux-android24-clang -O2 -Wall -Wextra -Werror \
+>   -DKOKONA_PREFIX='"/data/user/0/<包名>/files/KokonaRuntime/kokona-glibc"' \
+>   -o app/assets/kokona-run app/native/kokona-run.c
+> ```
+> 同一份源码也能用宿主 gcc 编译，配 `KOKONA_DRY_RUN=1` 做逻辑验收。
+
 # kokona-glibc：自建 glibc 2.44 前缀
 
 KokonaHarness 只在需要跑 glibc 程序时才用这套前缀，bionic 仍是默认。前缀里的

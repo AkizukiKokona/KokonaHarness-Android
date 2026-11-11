@@ -6,7 +6,7 @@ whenToUse: 运行 file 显示 interpreter 为 /lib/ld-linux-aarch64.so.1 的程�
 
 # KokonaGlibcRunner（glibc 程序按需运行）
 
-运行时自带一套独立 glibc（位于 `KokonaRuntime/kokona-glibc`）。**默认所有命令仍走 bionic，性能不变**；只有 glibc 程序才需要 `kokona-grun`。没有 proot、没有 ptrace，启动接近原生。
+运行时自带一套独立 glibc（位于 `KokonaRuntime/kokona-glibc`）。**默认所有命令仍走 bionic，性能不变**；只有 glibc 程序才需要 `kokona-grun`。没有 proot、没有 ptrace。1.1.0 起 `kokona-grun` 是**原生 ELF launcher**，不再经过 shell，启动接近裸 loader。
 
 ## 判断要不要用
 
@@ -33,7 +33,8 @@ kokona-grun ./binary --version        # 基本运行
 kokona-grun -- ./binary --flag        # 参数以 - 开头时用 -- 分隔
 ```
 
-- `kokona-grun` 自动：清掉 bionic 的 `LD_LIBRARY_PATH`/`LD_PRELOAD`、写好 DNS（App 写入的实时 DNS 列表 `etc/dns.servers` → `getprop net.dns1-4` → 公共 DNS 兜底，生成 `kokona-glibc/etc/resolv.conf`）、指向内置 CA。
+- `kokona-grun` 自动：清掉 bionic 的 `LD_LIBRARY_PATH`/`LD_PRELOAD`、按需重写 DNS（只读 App 写入的 `etc/dns.servers`，逐行校验，结果与现有 `resolv.conf` 相同就**不写**）、强制 `C` locale、指向内置 CA。**不调用任何外部命令，也不调用 `getprop`**。
+- `--exec` 跳过全部环境准备；`--shell` 一次准备后从 stdin 逐行读取命令连续执行。
 - 会话内多次运行同一程序时环境已就绪，无额外成本。
 
 ### 第一个参数必须是路径，不能是裸命令名
@@ -60,7 +61,14 @@ kgetconf LONG_BIT                # ✓ 推荐：用 k 前缀启动器
 | `kgencat` | gencat |
 | `kpldd` | pldd（列出进程加载的共享库） |
 
-这些启动器都在 `KokonaRuntime/bin`，内部自己找到 glibc 前缀，可直接在 `PATH` 里调用。
+这些启动器都在 `KokonaRuntime/bin`，**它们是同一个 ELF 的实体副本**（`app/native/kokona-run.c`），由 `argv[0]` 决定跑哪个工具。设备端 tar 解包器会跳过符号链接/硬链接，所以不能用链接省空间。可直接在 `PATH` 里调用。
+
+## 性能特征
+
+- `kokona-grun` 是**原生 ELF launcher**（`app/native/kokona-run.c`），不是 sh 脚本：进程内准备 DNS / locale / 前缀 / 环境变量，最后一次 `execve()` 直达 glibc loader。零 toybox sh 启动、零 fork、零外部命令、零管道。
+- 旧版 170 行脚本在低端机上单次 175–192ms，其中约 65% 花在 DNS 段的 `dirname` / `tr` / `getprop` / `cd+pwd`；同一程序直接 exec loader 约 6ms，bionic 程序基线约 26ms。**慢的一直是脚本层，不是 glibc**。
+- 现在每次调用的开销是**固定的启动税**，与程序运行时长、IO 次数无关；这和 proot 那种按 syscall 逐次 ptrace 拦截、随 IO 增长的开销性质完全不同。
+- `--exec` 连环境准备都跳过；`--shell` 在一个进程里连续跑多个 glibc 程序，只付每个程序的 loader 成本。
 
 ## 缺库怎么办
 
@@ -75,8 +83,8 @@ $BUILD_TMP/llvm-readelf -d ./binary 2>/dev/null || readelf -d ./binary | grep NE
 
 ## DNS / TLS
 
-- DNS 走 `KokonaRuntime/kokona-glibc/etc/resolv.conf`。每次 `kokona-grun` 都会先读 App 写入的 `etc/dns.servers`（当前网络的实时 DNS），读不到再退到 `getprop net.dns1-4`，都拿不到才用 `1.1.1.1`/`8.8.8.8`。手动改会被下次运行覆盖。
-- 顺序是有原因的：Android 10+ 不再发布 `net.dns*` 属性，只有 App 写的 `dns.servers` 才反映当前网络。
+- DNS 走 `KokonaRuntime/kokona-glibc/etc/resolv.conf`。launcher 只读 App 写入的 `etc/dns.servers`，逐行校验 `nameserver <合法 IPv4/IPv6>`，垃圾行/注释/半截行一律丢弃；文件不存在或全部无效才用 `1.1.1.1`/`8.8.8.8`。**结果相同就不写文件**，所以内容没变时 mtime 保持不变。
+- Android 10+ 不再发布 `net.dns*` 属性，而且 `getprop` 是外部命令（每次 20ms 级），热路径已彻底移除；当前网络的实时 DNS 只由 App 写进 `dns.servers`。
 - 排查 DNS 时先 `cat KokonaRuntime/kokona-glibc/etc/resolv.conf`，确认里面有 `nameserver` 行；再 `kgetent hosts example.com`。
 - TLS 用 `SSL_CERT_FILE`（已指向内置 CA）；`/etc` 不可写，任何依赖 `/etc/resolv.conf`、`/etc/ssl` 的程序（常见于 Go/Rust 静态二进制）无法修复，只能靠程序自身环境变量。
 - `hosts` 文件在 `kokona-glibc/etc/hosts`，可编辑。
@@ -85,9 +93,10 @@ $BUILD_TMP/llvm-readelf -d ./binary 2>/dev/null || readelf -d ./binary | grep NE
 
 - `iconv` 的 CJK 编码可用：`printf '世界
 ' | kiconv -f UTF-8 -t EUC-KR`。前提是打包时把 `gconv-modules.d/gconv-modules-extra.conf` 的注册表并进了 `lib/gconv/gconv-modules`，且 `libKSC.so` / `libJIS.so` / `libCNS.so` 这些同目录表文件没被裁掉——两者缺一，CJK 就会报 `conversion to \`EUC-KR' is not supported`。
-- 前缀**不带 locale 数据**，`C.UTF-8` 不可用，`kokona-grun` 默认 `LC_ALL=C`（内建、不报错、字节透明，UTF-8 文本原样透传）。自己编译了 locale 数据放进 `lib/locale` 后，显式 `LC_ALL=... kokona-grun ...` 即可生效。
-- `klocale` 若仍打印三行 `Cannot set LC_CTYPE/MESSAGES/COLLATE to default locale`，**这是预期行为**：没有 `lib/locale/locale-archive` 时，逐 category 探测的 `locale` 工具一定会报；`hello`、`iconv`、UTF-8 透传都不受影响。不要为这三行去补整个 locale-archive。
-- `kokona-grun --version` / `--help` / 无参数目前仍会把 loader 自己的 usage 或报错透传出来，只是体验问题，不影响运行，暂不修。
+- 前缀**不带 locale 数据**，只支持 `C`/`POSIX`。launcher 在检测到没有 `lib/locale/locale-archive` 时把 **`LANG` 与 `LC_ALL` 一起强制为 `C`**（只改 `LC_ALL`、留着 `LANG=en_US.UTF-8` 会让 `locale` 继续刷警告）。C 是内建、零警告、字节透明，UTF-8 文本原样透传。
+- 因此 `klocale` 不再输出 `Cannot set LC_*` 三行警告；普通程序与 `iconv` 的 CJK 转换都不受影响。
+- 自己编译了 locale 数据放进 `lib/locale` 后，launcher 会保留调用方显式给的 `LANG`/`LC_ALL`。
+- `kokona-grun --version` / `--help` 会打印友好用法，无参数给明确提示并 `exit 127`。
 
 ## 限制
 
@@ -96,10 +105,11 @@ $BUILD_TMP/llvm-readelf -d ./binary 2>/dev/null || readelf -d ./binary | grep NE
 - 需要 systemd/dbus 的程序无法运行（Android 没有）。
 - 多线程程序若依赖 `rseq`/`set_robust_list` 已做适配，但极端调度场景可能与 bionic 行为有差异。
 - `getpwuid` 对 Android app uid 返回合成的 passwd 条目（与 Termux 一致）。
+- **`getconf` 变量表不全**：这份 glibc 2.44 的 `posix/posix-conf-vars.list` 里没有 `PATH_SEPARATOR`，`getconf PATH_SEPARATOR` 会返回 `Unrecognized variable`；同类 POSIX 名称也可能缺失。这是上游变量表本身的范围，不是打包丢文件，用 `getconf -a` 查实际支持列表。
 
 ## 禁止
 
-- 不要对 bionic 程序（`/system/bin/linker64`）使用 kokona-grun。
+- 不要对 bionic 程序（`/system/bin/linker64`）使用 kokona-grun——实测会报 `libc.so invalid ELF header` / `No such file or directory`。
 - 不要设置全局 `LD_LIBRARY_PATH` 指向 `kokona-glibc/lib`——会把 glibc 库泄漏进 bionic 进程导致崩溃。最典型的现场是：用 `/system/bin/sh` 跑 `ldd` 脚本时顺手导出了它，`sh` 自己就会去加载 `libc.so`（链接脚本、不是 ELF）→ `CANNOT LINK EXECUTABLE "/system/bin/sh": ... has bad ELF magic`。`kldd` 之所以用 loader 的 `--list`，就是为了完全不碰这个变量。
 - 不要用 proot/chroot 方案；本运行时就是无 proot 的按需方案。
 - 不要修改二进制 interpreter（除非用户明确要求，可用 `patchelf` 类工具但需说明后果）。

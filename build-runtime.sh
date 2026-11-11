@@ -480,60 +480,30 @@ if [ -d "$GLIBC_SRC" ]; then
   # That is how lib/ld-linux-aarch64.so.1 went missing while bin/ld.so survived.
   cp -rLp "$GLIBC_SRC/." "$RT/kokona-glibc/"
 
-  # Prefixed launchers, so the glibc prefix never has to join PATH.
-  #
-  # The bionic runtime owns bin/. Putting the prefix's bin on PATH only stayed
-  # safe because none of its nine tools happened to share a name with a bionic
-  # binary -- PATH order was the only thing keeping curl/git/node from being
-  # shadowed. One packaging mistake and a bionic command silently turns into a
-  # glibc one. Prefixing the names removes the possibility instead of managing
-  # the risk: kiconv, kgetent, kgetconf, klocale, kldd, kgencat, kpldd.
-  for tool in getconf getent iconv locale ldd gencat pldd; do
-    cat > "$RT/bin/k$tool" <<EOS
-#!/system/bin/sh
-# k$tool - glibc $tool from the bundled kokona-glibc prefix.
-# Prefixed on purpose: the bare name belongs to the bionic runtime.
-d=\$(dirname "\$0")
-if [ -n "\${KOKONA_GLIBC:-}" ]; then G="\$KOKONA_GLIBC"; else G="\$d/../kokona-glibc"; fi
-[ -x "\$G/lib/ld-linux-aarch64.so.1" ] || { echo "k$tool: glibc runtime missing at \$G" >&2; exit 127; }
-LIBPATH="\$G/lib:\$HOME/.local/lib/kokona-glibc"
-# ldd is a shell script, not an ELF. Both obvious routes are broken:
-#   * exec it through the loader -> "invalid ELF header" (r36)
-#   * run it via /system/bin/sh with LD_LIBRARY_PATH exported -> the bionic sh
-#     itself loads glibc's libc.so (a linker script) and dies with
-#     "bad ELF magic" (r37). Never leak the prefix into LD_LIBRARY_PATH.
-# So skip the script: --list is the loader's own dependency-report mode, the
-# very mechanism ldd uses internally. --library-path carries the prefix plus
-# ~/.local/lib/kokona-glibc so supplementary libraries resolve too, and no
-# environment variable is touched at all -- bionic processes stay clean.
-if [ "$tool" = ldd ]; then
-  if [ "\${1:-}" = "--" ]; then shift; fi
-  case "\${1:-}" in
-    --help|-h|--version|-V|--usage|"") exec /system/bin/sh "\$G/bin/ldd" "\$@" ;;
-  esac
-  if [ "\$#" -eq 1 ]; then
-    exec "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$LIBPATH" --list "\$1"
-  fi
-  rc=0
-  for f in "\$@"; do
-    echo "\$f:"
-    "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$LIBPATH" --list "\$f" || rc=\$?
+  # One native launcher, copied under every entry-point name. The device-side
+  # tar reader drops symlink/hardlink members, so each name has to be a real
+  # regular file (~15 KB each). This also removes toybox sh from the hot path
+  # entirely: the old 170-line wrapper dominated per-call latency with a shell
+  # startup plus a fork+exec for every dirname / tr / getprop / cd+pwd.
+  # argv[0] decides which glibc tool to run, so there is a single implementation.
+  RUNNER="$OUT_ASSETS/kokona-run"
+  [ -f "$RUNNER" ] || die "missing native launcher $RUNNER (see app/native/kokona-run.c)"
+  for entry in kokona-grun krun kiconv kgetent kgetconf klocale kldd kgencat kpldd; do
+    cp -f "$RUNNER" "$RT/bin/$entry"
+    chmod 755 "$RT/bin/$entry"
   done
-  exit \$rc
-fi
-# Unreachable for kldd: every branch above execs or exits. Kept so all
-# seven wrappers can be generated from one template.
-exec "\$G/lib/ld-linux-aarch64.so.1" --library-path "\$LIBPATH" "\$G/bin/$tool" "\$@"
-EOS
-    chmod 755 "$RT/bin/k$tool"
-  done
-  # kokona-grun resolves the prefix from its own location, so a copy next to
-  # the bionic tools finds ../kokona-glibc without any package name baked in.
-  cp -f "$RT/kokona-glibc/bin/kokona-grun" "$RT/bin/kokona-grun"
-  chmod 755 "$RT/bin/kokona-grun"
+  # The prefix keeps its own copy so $G/bin/kokona-grun behaves identically.
+  cp -f "$RUNNER" "$RT/kokona-glibc/bin/kokona-grun"
+  chmod 755 "$RT/kokona-glibc/bin/kokona-grun"
 else
   echo "WARNING: glibc staging missing ($GLIBC_SRC); runtime ships without kokona-glibc" >&2
 fi
+
+# P9: one platform-dispatch entry for "open a directory". Both bundled copies
+# of dsh-native-command are patched at their dispatch points, so sidebar,
+# previews and any other caller behave the same on Android / Windows.
+PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+"$PY" "$ROOT/tools/patch-native-opener.py" "$RT"
 
 echo "packing $RT ..."
 TAR="$BUILD/runtime.tar"

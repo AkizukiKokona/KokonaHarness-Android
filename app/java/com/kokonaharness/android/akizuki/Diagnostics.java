@@ -90,7 +90,7 @@ public final class Diagnostics {
 
         out(sb, "KHA SELF-CHECK  " + new SimpleDateFormat(
                 "yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()));
-        out(sb, "package=" + context.getPackageName() + "  build=1.0.48-diag");
+        out(sb, "package=" + context.getPackageName() + "  build=1.1.0-diag");
         out(sb, "MODE=" + modeName(context)
                 + "  rootLaunchRequested=" + rootLaunchRequested(context));
         out(sb, "NOTE: final product must work WITHOUT root; root is only an A/B probe.");

@@ -1049,6 +1049,10 @@ public class EngineService extends Service {
         // not inherit this environment; the launchers themselves also resolve it
         // from their own location, so this is a shortcut, not the only source.
         env.put("KOKONA_GLIBC", runtimePath + "/kokona-glibc");
+        // Tells the runtime's directory opener that it is running on Android,
+        // not desktop Linux: Node reports process.platform === "linux" on
+        // both, so platform alone cannot pick the system file manager.
+        env.put("KOKONA_ANDROID", "1");
         // kokona-glibc/bin deliberately does NOT join PATH any more. Its nine
         // tools used to sit behind the bionic bin purely by ordering, and the
         // only reason nothing broke is that no name collided yet -- a bionic
