@@ -359,6 +359,12 @@ KokonaHarness-Android/
 - `node-addon-require-builtin`：Android 无预编译绑定，`lib/index.js` 换成基于 `--expose-internals` 的 JS 回退（`runtime-patches/node-addon-require-builtin-android.js`）。
 - `dsh-node-addon-system`、`dsh-api-workspace-controller`、`dsh-attachment-local`、`dsh-session-persistence-jsonl` 等兼容补丁。
 
+## 许可证
+
+本项目以 **[Apache License 2.0](LICENSE)** 发布，版权归 **AkizukiKokona** 所有（`Copyright 2026 AkizukiKokona`）。
+
+你可以自由使用、修改、分发本项目（包括商业用途），只需保留版权与许可声明，并在分发时附上 Apache 2.0 的许可证副本。完整条款见仓库根目录的 [`LICENSE`](LICENSE)。
+
 ## 版本
 
 - App：**1.1.3**（versionCode 152）
