@@ -81,9 +81,13 @@
 上面这些数字就是在同一台设备上跑出来的。视频是不接电脑、不用 Root，直接在这块手表上跑本地 DSH 的实机录屏——原始录屏，没有剪辑也没有加速，看一遍比看表格直观（录屏时提到的 doc 问题已在本版修复）。
 
 <p align="center">
-  <img src="docs/media/watch-chat.jpg" alt="手表上 DSH 正在执行命令并通过验收项" width="300">
-  <img src="docs/media/watch-dsh-home.jpg" alt="手表上的 DSH 首页（还没开始对话）" width="300">
+  <img src="docs/media/watch-dsh-home.jpg" alt="手表上的 DSH 首页（还没开始对话）" width="240">
+  <img src="docs/media/watch-device.jpg" alt="同一台手表的系统信息：HESC M60T / Android 9 / 2.83 GB / Unisoc W527" width="240">
+  <img src="docs/media/watch-terminal.jpg" alt="内置终端里 dsh --version 输出 0.2.2-rc.1" width="240">
+  <img src="docs/media/watch-settings.jpg" alt="KHA 设置里的运行模式：普通 / 无障碍 / 高级" width="240">
 </p>
+
+<sub>四张都是同一台手表上的原始截图：首页 → 系统信息 → 内置终端（<code>dsh --version</code> → <code>0.2.2-rc.1</code>）→ KHA 设置。首页置顶，其余按录制先后。</sub>
 
 **真正手机上的测试还没有**：本轮只有这台极限低端设备的成绩。主流手机（骁龙 / 天玑）上的启动与日常使用测试，将尽可能在本周末完成，并会一并制作完整的介绍视频喵。下面这栏先空着，测完就填：
 
