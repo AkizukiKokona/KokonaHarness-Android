@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.1.7**（156）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r46**
+> Android 8.1+ · arm64 · 当前 **1.1.8**（157）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r47**
 
 ## 实测性能：手表上的启动开销
 
@@ -265,7 +265,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 156 / versionName 1.1.7
+│   ├── AndroidManifest.xml        # versionCode 157 / versionName 1.1.8
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -366,14 +366,16 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.1.7**（versionCode 156）
+- App：**1.1.8**（versionCode 157）
 - DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r46**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r47**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.1.7（本次）**：修 r45 遗留。**P0 D4 读回假阴性**：`android_set_text` 根因是 WebView 输入框的 `text` 属性恒空，旧代码把「读回为空」当成失败抛错，导致 Agent 看到 `ok:false` 重试、重复写入。现改为：读回匹配 → `verified:true`；读回为空/不一致 → **`ok:true` + `verified:false` + `reason`**（不再 `ok:false`）；清空仍 `verified:true`；`node_action set_text` 同步。**P1**：`android_status.screenshotSupported` 恒 true + `screenshotMethod`；MediaProjection 授权缓存（首次弹框、之后同一会话复用不弹）；`--shell` 内 k* 已可用（`resolve_bare` 兼容 runtime bin）。**P2**：文档补 WebView text 恒空、已授权不弹框；README 性能段改为 r45 约 40ms 量级，并注明旧 6/26/19–23ms 测量方法不同、不再引用。运行时 r46。
+**1.1.8（本次）**：修 r46 唯一阻塞项 DOC-1（文档说反话）。**根因**：`--shell` 把每一行都送进 glibc loader（`ld-linux --library-path <prefix>/lib <prog>`），而 k* 启动器是 **bionic ELF**，ld.so 会按 `--library-path` 去找它自己的 `libdl.so`，于是报 `libdl.so: cannot open shared object file`。**修复**（方案 A，改实现）：launcher 先读 ELF 的 `PT_INTERP` 分流——glibc 程序仍走内置 loader；所有 bionic ELF 直接 `execv`，并清掉 `LD_LIBRARY_PATH`/`LD_PRELOAD`/`LD_DEBUG`/`LD_DEBUG_OUTPUT`/`LD_BIND_NOW`。同一规则也用于单条命令（`kokona-grun klocale` 此前同样失败）。现在 `--shell` 内 `kgetconf LONG_BIT` → `64`、`klocale` → `C`，同时 `getconf` 等 glibc 程序行为不变。`--help` 与 `glibc-runtime/SKILL.md` 已按实际分流规则改写。运行时 r47。
+
+**1.1.7**：修 r45 遗留。**P0 D4 读回假阴性**：`android_set_text` 根因是 WebView 输入框的 `text` 属性恒空，旧代码把「读回为空」当成失败抛错，导致 Agent 看到 `ok:false` 重试、重复写入。现改为：读回匹配 → `verified:true`；读回为空/不一致 → **`ok:true` + `verified:false` + `reason`**（不再 `ok:false`）；清空仍 `verified:true`；`node_action set_text` 同步。**P1**：`android_status.screenshotSupported` 恒 true + `screenshotMethod`；MediaProjection 授权缓存（首次弹框、之后同一会话复用不弹）；`--shell` 内 k* 已可用（`resolve_bare` 兼容 runtime bin）。**P2**：文档补 WebView text 恒空、已授权不弹框；README 性能段改为 r45 约 40ms 量级，并注明旧 6/26/19–23ms 测量方法不同、不再引用。运行时 r46。
 
 **1.1.6**：按缺陷清单修功能项。**D4 文本输入闭环**：`android_set_text` 写入后**回读节点树校验**，读回不一致直接返回失败（根因：此前只要 `performAction` 返回 true 就报 ok；且 `callBridge` 过滤空字符串，清空请求到 Java 变成 missing text）。清空支持 `text=""` 或 `clear=true`；`node_action set_text` 同步加回读校验。**DOC-1** `android_status.screenshotSupported` 改为恒 true 并加 `screenshotMethod`（SDK<30 由 MediaProjection 支撑）。**DOC-4** `kldd` 对 bionic/脚本/静态 ELF 直接非零 rc 并打印原因（根因：loader `--list` 对非 glibc 目标也返回 0）。**DOC-5** `--version` 补版本号。**DOC-3** `--shell` 裸名解析同时尝试 prefix `bin/` 与 runtime `bin/`，k* 启动器在 --shell 内可用。**DOC-2/DOC-6** 文档注明 `android_foreground` 可能返回 IME、set_text 清空与校验语义。运行时 r45。
 

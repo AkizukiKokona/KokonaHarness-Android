@@ -42,7 +42,7 @@ kokona-grun -- ./binary --flag        # 参数以 - 开头时用 -- 分隔
 `kokona-grun <program>` 的解析规则（launcher 在 `execve` 前完成，**不依赖 loader 的 PATH 查找**）：
 
 - 参数**含 `/`**（绝对或相对路径）→ **原样**交给 loader，绝不干预。
-- 参数**不含 `/`** → 拼接为 `<prefix>/bin/<program>` 再执行；目标不存在或不可执行时保持原样，由 loader 报原来的 `No such file or directory`（rc=127），不会多出一层误报。
+- 参数**不含 `/`** → 依次尝试 `<prefix>/bin/<program>`、runtime 的 `<prefix>/../bin/<program>`；两处都不存在或不可执行时保持原样，由 loader 报原来的 `No such file or directory`（rc=127），不会多出一层误报。
 
 ```bash
 kokona-grun getconf LONG_BIT     # ✓ 64，裸名自动解析到 <prefix>/bin/getconf
@@ -52,11 +52,20 @@ kgetconf LONG_BIT                # ✓ 等价的 k 前缀启动器
 
 > loader 自身不做 `PATH` 查找；裸名的解析由 launcher 完成，所以上面两种写法都能跑。
 >
-> `--shell` 内同样生效：裸名会先查 `<prefix>/bin/`、再查 runtime 的 `<prefix>/../bin/`，所以 `klocale` / `kgetconf` 等 k* 启动器在 `--shell` 里也能用。
+> **执行方式按 ELF 类型分流**：glibc 程序（`PT_INTERP` 为 `ld-linux-aarch64.so.1`）交给内置 loader；k* 启动器是 **bionic ELF**（`PT_INTERP` 为 `/system/bin/linker64`），由 launcher 直接 `execv` 并清掉 `LD_LIBRARY_PATH`/`LD_PRELOAD`/`LD_DEBUG` 等变量。**不能**把 bionic ELF 送进 glibc loader——ld.so 会按 `--library-path <prefix>/lib` 去找它的 `libdl.so`，报 `libdl.so: cannot open shared object file`（r46 及更早版本在 `--shell` 内的正是这个故障）。
+>
+> 因此 `--shell` 内 k* 与 glibc 工具都能用，二者互不影响：
+>
+> ```bash
+> printf 'getconf LONG_BIT\nkgetconf LONG_BIT\nklocale\n' | kokona-grun --shell
+> # 三行都正常：64 / 64 / C
+> ```
 
 ### glibc 工具用 `k` 前缀名
 
-`kokona-glibc/bin` **不会**加入 `PATH`（防止与 bionic 的同名命令串层）。需要 glibc 版工具时用前缀名：
+`kokona-glibc/bin` **不会**加入 `PATH`（防止与 bionic 的同名命令串层）。需要 glibc 版工具时用前缀名。
+
+`k*` 启动器自身是 **bionic ELF**（内部再转发给 glibc loader），所以**顶层 PATH 与 `kokona-grun --shell` 内都能用**；`--shell` 会自动识别它们为 bionic 并直接 `execv`，不会拿 glibc loader 去加载。
 
 | 前缀命令 | 对应 glibc 工具 |
 |---|---|

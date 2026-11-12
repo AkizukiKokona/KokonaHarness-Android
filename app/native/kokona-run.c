@@ -47,8 +47,8 @@
 #define NS_MAX 16
 
 /* Reported by --version; bump alongside the app/runtime release. */
-#define KOKONA_RUN_VERSION "1.1.7"
-#define KOKONA_RUNTIME_REV "r46"
+#define KOKONA_RUN_VERSION "1.1.8"
+#define KOKONA_RUNTIME_REV "r47"
 
 /* The prefix is a build-time constant (~100 chars); 1024 leaves every derived
  * path far below PATHBUF so no snprintf can ever truncate. */
@@ -287,8 +287,11 @@ static void show_help(void) {
     puts("--shell : read one command per line from stdin. Each line is split on");
     puts("          whitespace (no quoting, pipes, or builtins). Blank lines and");
     puts("          lines beginning with '#' are ignored. A bare command name is");
-    puts("          resolved against the glibc prefix bin/ directory. This is NOT a");
-    puts("          shell: there is no variable expansion, globbing, or redirection.");
+    puts("          resolved against prefix bin/, then the runtime bin/ (so the k*");
+    puts("          launchers work here too). glibc ELFs go through the bundled");
+    puts("          loader; bionic ELFs (k*) are executed directly with LD_*");
+    puts("          cleared, because ld.so cannot load them. This is NOT a shell:");
+    puts("          no variable expansion, globbing, or redirection.");
     printf("prefix: %s\n", G);
 }
 
@@ -355,6 +358,27 @@ static int elf_kind(const char *path) {
     return kind;
 }
 
+/* execv() a bionic ELF (the k* launchers) directly, with every glibc-only
+ * environment variable stripped.
+ *
+ * Feeding a bionic ELF to ld-linux does not work: ld.so honours DT_NEEDED in
+ * its own namespace, so the launcher's `libdl.so` is looked up under
+ * `--library-path <prefix>/lib` (and then /lib, /usr/lib), where only glibc
+ * libraries exist -> "libdl.so: cannot open shared object file". The Android
+ * linker in /system/bin/linker64 is the only loader that can run it, and it is
+ * reached by a plain execv(). LD_* is cleared as well so nothing redirects the
+ * bionic loader's own search. */
+static void exec_bionic(const char *prog, char **argv) {
+    unsetenv("LD_LIBRARY_PATH");
+    unsetenv("LD_PRELOAD");
+    unsetenv("LD_DEBUG");
+    unsetenv("LD_DEBUG_OUTPUT");
+    unsetenv("LD_BIND_NOW");
+    execv(prog, argv);
+    fprintf(stderr, "kokona-run: cannot exec %s: %s\n", prog, strerror(errno));
+    _exit(127);
+}
+
 /* Minimal batch runner: read one command per line from stdin and execute it
  * through the loader. Lines are split on whitespace (no quoting, no pipes,
  * no builtins, no redirection). Blank lines and lines whose first non-blank
@@ -376,10 +400,23 @@ static int shell_loop(void) {
             tokens[n++] = q;
         }
         if (n == 0) continue;
+        tokens[n] = NULL;
         /* Resolve a bare command name against prefix bin/, then the runtime's
          * own bin/, so the k* launchers work here too. */
         if (strchr(tokens[0], '/') == NULL) {
             if (resolve_bare(tokens[0], resolved, sizeof resolved)) tokens[0] = resolved;
+        }
+        /* bionic ELF (k* launcher): exec it directly. Sending it to the glibc
+         * loader makes ld.so resolve its libdl.so under --library-path and
+         * fail with "libdl.so: cannot open shared object file". */
+        if (elf_kind(tokens[0]) == 2) {
+            pid_t bpid = fork();
+            if (bpid == 0) exec_bionic(tokens[0], tokens);
+            if (bpid > 0) {
+                int bstatus = 0;
+                waitpid(bpid, &bstatus, 0);
+            }
+            continue;
         }
         char **nav = build_argv(NULL, n, tokens);
         if (!nav) return 127;
@@ -493,6 +530,14 @@ int main(int argc, char **argv) {
             fprintf(stderr, "kldd: %s: %s\n", args[0], why);
             return 2;
         }
+    }
+
+    /* Same rule for a single command: `kokona-grun klocale` resolves to the
+     * bionic k* launcher, which must be exec'd directly instead of being fed
+     * to ld.so. glibc ELFs keep using the loader below, unchanged.
+     * args[0] may be the malloc'd `bare` buffer, so it must not be freed first. */
+    if (!alias && elf_kind(args[0]) == 2) {
+        exec_bionic(args[0], args);
     }
 
     char **nav = build_argv(alias, n, args);

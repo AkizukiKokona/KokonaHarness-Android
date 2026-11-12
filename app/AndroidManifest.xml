@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kokonaharness.android.akizuki"
-    android:versionCode="156"
-    android:versionName="1.1.7">
+    android:versionCode="157"
+    android:versionName="1.1.8">
 
     <uses-sdk android:minSdkVersion="27" android:targetSdkVersion="28" />
 

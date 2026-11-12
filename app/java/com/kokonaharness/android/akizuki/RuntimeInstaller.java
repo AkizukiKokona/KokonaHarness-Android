@@ -26,7 +26,7 @@ public final class RuntimeInstaller {
     // pre-plugin settings UI inside it, so devices that installed it kept that
     // tree and our later kha-setthings bundle ended up layered on top of the
     // old files. r34 forces the one full re-extract that clears the overlap.
-    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r46";
+    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r47";
 
     /**
      * The DSH release inside the runtime, without the packaging suffix: the boot
