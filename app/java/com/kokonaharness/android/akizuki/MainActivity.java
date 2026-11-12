@@ -305,7 +305,7 @@ public class MainActivity extends Activity {
             // feature; on Android it only ever produces a red error message.
             // Its CSS-module class is stable, so hide the whole action container.
             "'.me01iq_action{display:none!important;}'+" +
-            // 简介模式（设置里那个开关）：一次性关掉自定义背景与全部磨砂效果。
+            // 简洁模式（设置里的「默认样式 / 简洁模式」二选一）：一次性关掉自定义背景与全部磨砂效果。
             // 两个效果本来就是同一套观感，拆开只会得到"半透明但没有背景"的
             // 怪异中间态，所以这里始终成对处理：背景层直接不画，抽屉/设置面板
             // 退回实色，backdrop-filter 全部清零。实色用白/深灰而不是
@@ -337,7 +337,7 @@ public class MainActivity extends Activity {
             // every sync, which is itself a mutation the sidebar's observer
             // watches.
             "}catch(e){}};window.__KOKONA_APPLY_BRAND__();" +
-            // 简介模式：状态只挂在 <html data-kha-simple>，上面的 CSS 全部由它
+            // 简洁模式：状态只挂在 <html data-kha-simple>，上面的 CSS 全部由它
             // 驱动，所以切换不需要重建样式表。localStorage 只是首帧的快速路径
             // （页面刚加载、bridge 还没被询问时就能先走对），最终以
             // SharedPreferences 为准——否则清缓存或换设备后开关会漂移。
@@ -1518,7 +1518,7 @@ public class MainActivity extends Activity {
         }
 
         /**
-         * 简介模式：关掉自定义背景与全部磨砂效果（两者一起，不单独存在）。
+         * 简洁模式：关掉自定义背景与全部磨砂效果（两者一起，不单独存在）。
          * 状态存 SharedPreferences，页面只负责按 data-kha-simple 属性渲染。
          */
         @JavascriptInterface

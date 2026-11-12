@@ -377,7 +377,7 @@ KokonaHarness-Android/
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.2.0（本次）**：**运行时压缩格式 xz → zstd**。启动/升级时那一次解包从 `xz -6` 换成 `zstd -19`：压缩包大几 MB，但设备端解压是单线程的，zstd 的解码速度是 xz 的数倍，首次安装与每次版本升级的等待明显缩短。解码不用 Java 库（Android 没有 zstd API），而是随包带一个 92 KB 的原生解码器 `kunzstd`：压缩资源从 stdin 灌进去、tar 从 stdout 直接进 `TarExtractor`，全程不落临时文件；`app/libs/xz.jar` 与 XZ 依赖一并移除。**新增「简介模式」开关**（设置 → KHA 设置 → 运行模式下方）：一个开关同时关掉自定义背景（`#kokona-bg`）与磨砂/模糊（`backdrop-filter`），界面回到纯白；两项只能一起开关，关闭即恢复原状，状态持久化。同时把「检查更新」移到该页最下方。文档补一句：长期后台再切回前台，WebView 可能重载并短暂空白，等几秒即恢复。运行时 r48。
+**1.2.0（本次）**：**运行时压缩格式 xz → zstd**。启动/升级时那一次解包从 `xz -6` 换成 `zstd -19`：压缩包大几 MB，但设备端解压是单线程的，zstd 的解码速度是 xz 的数倍，首次安装与每次版本升级的等待明显缩短。解码不用 Java 库（Android 没有 zstd API），而是随包带一个 92 KB 的原生解码器 `kunzstd`：压缩资源从 stdin 灌进去、tar 从 stdout 直接进 `TarExtractor`，全程不落临时文件；`app/libs/xz.jar` 与 XZ 依赖一并移除。**新增「简洁模式」**（设置 → KHA 设置 → 运行模式下方，与运行模式一样是两选一按钮，不是开关）：选「简洁模式」会同时关掉自定义背景（`#kokona-bg`）与磨砂/模糊（`backdrop-filter`），界面回到纯白；选「默认样式」恢复原状，状态持久化。同时把「检查更新」移到该页最下方。文档补一句：长期后台再切回前台，WebView 可能重载并短暂空白，等几秒即恢复。运行时 r48。
 
 **1.1.8**：修 r46 唯一阻塞项 DOC-1（文档说反话）。**根因**：`--shell` 把每一行都送进 glibc loader（`ld-linux --library-path <prefix>/lib <prog>`），而 k* 启动器是 **bionic ELF**，ld.so 会按 `--library-path` 去找它自己的 `libdl.so`，于是报 `libdl.so: cannot open shared object file`。**修复**（方案 A，改实现）：launcher 先读 ELF 的 `PT_INTERP` 分流——glibc 程序仍走内置 loader；所有 bionic ELF 直接 `execv`，并清掉 `LD_LIBRARY_PATH`/`LD_PRELOAD`/`LD_DEBUG`/`LD_DEBUG_OUTPUT`/`LD_BIND_NOW`。同一规则也用于单条命令（`kokona-grun klocale` 此前同样失败）。现在 `--shell` 内 `kgetconf LONG_BIT` → `64`、`klocale` → `C`，同时 `getconf` 等 glibc 程序行为不变。`--help` 与 `glibc-runtime/SKILL.md` 已按实际分流规则改写。运行时 r47。
 

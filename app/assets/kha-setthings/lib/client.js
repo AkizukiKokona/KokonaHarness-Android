@@ -65,13 +65,7 @@ window.__ModuleLoader__.load({
       '.khaSet_termbtn{box-sizing:border-box;width:28px;height:28px;border:1px solid var(--dsw-alias-border-l3,#d8d8de);border-radius:6px;background:transparent;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;cursor:pointer;padding:0}',
       '.khaSet_termbtn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05))}',
       '.khaSet_notes{white-space:pre-wrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#666);max-height:180px;overflow-y:auto;background:rgba(127,127,127,.06);border-radius:8px;padding:8px 10px;margin:8px 0 0}',
-      '.khaSet_kv{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#666);margin:0 0 6px}',
-      '.khaSet_switchrow{display:flex;align-items:center;gap:12px;margin:2px 0 0}',
-      '.khaSet_switchrow .khaSet_pname{flex:1;min-width:150px}',
-      '.khaSet_switch{box-sizing:border-box;position:relative;flex:none;width:44px;height:26px;border-radius:999px;border:1px solid var(--dsw-alias-border-l3,#d8d8de);background:rgba(127,127,127,.2);cursor:pointer;padding:0;transition:background .15s ease,border-color .15s ease}',
-      '.khaSet_switch_on{background:#7c9cff;border-color:#7c9cff}',
-      '.khaSet_knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .15s ease}',
-      '.khaSet_switch_on .khaSet_knob{transform:translateX(18px)}'
+      '.khaSet_kv{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#666);margin:0 0 6px}'
     ].join('')
 
     const CAPS = [
@@ -147,31 +141,31 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 简介模式：一个开关同时管两件事——自定义背景层与磨砂（backdrop-filter）。
-     * 它们本来就是同一套观感，只关一半会得到"半透明但没有背景"的怪异中间态，
-     * 所以产品上只暴露一个开关，开=全关、关=保持现状。状态由 App 持久化，
-     * 页面只按 data-kha-simple 渲染，切换立即生效、不需要重开设置。
+     * 简洁模式：关掉自定义背景层与磨砂（backdrop-filter）。它们本来就是同一套
+     * 观感，只关一半会得到"半透明但没有背景"的怪异中间态，所以只提供两个互斥
+     * 选项（默认样式 / 简洁模式），和本页其它选择项保持一致，不做成开关。
+     * 状态由 App 持久化，页面只按 data-kha-simple 渲染，切换立即生效。
      */
     function SimpleModeBlock() {
-      const on = usePoll(() => {
+      const simple = usePoll(() => {
         const b = bridge()
         try { return b !== null && typeof b.simpleMode === 'function' ? !!b.simpleMode() : false } catch (error) { return false }
       }, 1200)
+      const STYLES = [
+        ['default', '默认样式', '自定义背景 + 磨砂模糊（当前外观）'],
+        ['simple', '简洁模式', '纯色背景、无模糊']
+      ]
       return h('div', { className: 'khaSet_block' },
-        h('div', { className: 'khaSet_title' }, '简介模式'),
-        h('div', { className: 'khaSet_desc' }, '开启后同时关闭自定义背景与磨砂（模糊）效果，界面回到纯白；两项只能一起开关，不会只关一半。关闭则恢复现在的外观。'),
-        h('div', { className: 'khaSet_switchrow' },
-          h('div', { className: 'khaSet_pname' },
-            on ? '已开启 · 纯色背景、无模糊' : '已关闭 · 使用自定义背景与模糊',
-            h('div', { className: 'khaSet_pdesc' }, '只影响外观，不改任何功能行为。')),
+        h('div', { className: 'khaSet_title' }, '界面样式'),
+        h('div', { className: 'khaSet_desc' }, '简洁模式会同时关闭自定义背景与磨砂（模糊）效果，界面回到纯白；两项一起生效，不能只关一半。默认样式即现在的外观。'),
+        h('div', { className: 'khaSet_row' }, STYLES.map((m) =>
           h('button', {
-            type: 'button',
-            role: 'switch',
-            'aria-checked': on ? 'true' : 'false',
-            title: on ? '点击关闭简介模式' : '点击开启简介模式',
-            className: 'khaSet_switch' + (on ? ' khaSet_switch_on' : ''),
-            onClick: () => call('setSimpleMode', !on)
-          }, h('span', { className: 'khaSet_knob' })))
+            type: 'button', key: m[0], title: m[2],
+            className: 'khaSet_btn' + (simple === (m[0] === 'simple') ? ' khaSet_on' : ''),
+            onClick: () => call('setSimpleMode', m[0] === 'simple')
+          }, m[1]))),
+        h('div', { className: 'khaSet_state' },
+          simple ? '当前 · 简洁模式（纯色背景、无模糊）' : '当前 · 默认样式（自定义背景 + 模糊）')
       )
     }
 
