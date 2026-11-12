@@ -151,13 +151,21 @@ window.__ModuleLoader__.load({
         const b = bridge()
         try { return b !== null && typeof b.simpleMode === 'function' ? !!b.simpleMode() : false } catch (error) { return false }
       }, 1200)
+      const custom = usePoll(() => {
+        const b = bridge()
+        try {
+          return b !== null && typeof b.backgroundInfo === 'function'
+            ? !!JSON.parse(b.backgroundInfo() || '{}').custom
+            : false
+        } catch (error) { return false }
+      }, 2000)
       const STYLES = [
-        ['default', '默认样式', '自定义背景 + 磨砂模糊（当前外观）'],
-        ['simple', '简洁模式', '纯色背景、无模糊']
+        ['default', '默认样式', '自定义背景 + 磨砂模糊 + 心夏图标'],
+        ['simple', '简洁模式', '纯色背景、无模糊、DSH 默认图标']
       ]
       return h('div', { className: 'khaSet_block' },
         h('div', { className: 'khaSet_title' }, '界面样式'),
-        h('div', { className: 'khaSet_desc' }, '简洁模式会同时关闭自定义背景与磨砂（模糊）效果，界面回到纯白；两项一起生效，不能只关一半。默认样式即现在的外观。'),
+        h('div', { className: 'khaSet_desc' }, '简洁模式会同时关闭自定义背景与磨砂（模糊）效果，并把桌面图标换回 DSH 默认图标，界面回到纯白；三项一起生效，不能只改一半。默认样式即现在的外观。'),
         h('div', { className: 'khaSet_row' }, STYLES.map((m) =>
           h('button', {
             type: 'button', key: m[0], title: m[2],
@@ -165,7 +173,12 @@ window.__ModuleLoader__.load({
             onClick: () => call('setSimpleMode', m[0] === 'simple')
           }, m[1]))),
         h('div', { className: 'khaSet_state' },
-          simple ? '当前 · 简洁模式（纯色背景、无模糊）' : '当前 · 默认样式（自定义背景 + 模糊）')
+          simple ? '当前 · 简洁模式（纯色背景、无模糊、DSH 图标）' : '当前 · 默认样式（自定义背景 + 模糊 + 心夏图标）'),
+        simple ? null : h('div', { className: 'khaSet_row', style: { marginTop: '10px' } }, [
+          h('button', { type: 'button', key: 'upload', className: 'khaSet_btn', onClick: () => call('pickBackground') }, '上传图片'),
+          h('button', { type: 'button', key: 'reset', className: 'khaSet_btn', onClick: () => call('resetBackground') }, '恢复默认心夏喵')
+        ]),
+        simple ? null : h('div', { className: 'khaSet_state' }, '当前背景：' + (custom ? '自定义图片' : '默认心夏'))
       )
     }
 

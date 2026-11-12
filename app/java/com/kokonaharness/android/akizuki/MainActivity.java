@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -51,6 +52,7 @@ import android.widget.Toast;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -65,6 +67,7 @@ public class MainActivity extends Activity {
     private static final int REQ_FILE = 22;
     private static final int REQ_PERM = 23;
     private static final int REQ_SAVE = 24;
+    private static final int REQ_PICK_BG = 31;
 
     private static final String SHIM =
             "(function(){" +
@@ -351,6 +354,21 @@ public class MainActivity extends Activity {
             "try{v=KokonaBridge.simpleMode()?'1':'0';}catch(e){}}" +
             "window.__KOKONA_SIMPLE__(v==='1');}catch(e){}};" +
             "window.__KOKONA_SIMPLE_APPLY__();" +
+            // 自定义背景：用户在设置里选过图片时，bridge 给出一个 data URL，这里用
+            // 一条独立 <style> 覆盖 #kokona-bg 的 background-image；传空字符串就
+            // 移除这条规则，回落到随包的「心夏」图。自定义图用不透明度 1（随包那张
+            // 是 22% 的水印，用户自己选的图若也压到 22% 基本等于没换）。
+            "window.__KOKONA_BG__=function(u){try{var id='kha-custom-bg';" +
+            "var el=document.getElementById(id);" +
+            "if(!u){if(el&&el.parentNode)el.parentNode.removeChild(el);return;}" +
+            "if(!el){var host=document.head||document.documentElement;if(!host)return;" +
+            "el=document.createElement('style');el.id=id;host.appendChild(el);}" +
+            "el.textContent='#kokona-bg{background-image:url(\"'+u+'\")!important;" +
+            "opacity:1!important;}';}catch(e){}};" +
+            "window.__KOKONA_BG_APPLY__=function(){try{" +
+            "if(window.KokonaBridge&&KokonaBridge.backgroundImage){" +
+            "var u=KokonaBridge.backgroundImage();if(u)window.__KOKONA_BG__(u);}}catch(e){}};" +
+            "window.__KOKONA_BG_APPLY__();" +
             // Edge swipe: left-to-right opens the drawer from the left third, right-to-left
             // closes it while open. Short, mostly horizontal swipes only.
             "var sx=0,sy=0,st0=0,tr=false,stEl=null;" +
@@ -478,6 +496,9 @@ public class MainActivity extends Activity {
     /** Last IME (keyboard) height in px reported by the window insets; re-sent to the page after it loads. */
     private int lastImeHeight = 0;
 
+    /** Cached data URL of the user's background image; null until read. */
+    private String backgroundCache;
+
     /** The live activity; the loopback bridge uses it to run MediaProjection capture. */
     private static volatile MainActivity currentActivity;
 
@@ -524,6 +545,13 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         currentActivity = this;
+        // The launcher entry lives in two <activity-alias> components, so the
+        // icon choice is a component state, not a preference the launcher reads.
+        // Re-assert it on every start: an app update resets component states to
+        // the manifest defaults (Kokona enabled), which would otherwise flip a
+        // 简洁模式 user back to the 心夏 icon after every upgrade.
+        applyLauncherIcon(getSharedPreferences("kha", MODE_PRIVATE)
+                .getBoolean("simple_mode", false));
         // Allows measuring the real page from adb during development. Gated on the
         // debuggable flag so a release build never exposes its WebView.
         // Allows inspecting the page from chrome://inspect. A release build is
@@ -1141,6 +1169,12 @@ public class MainActivity extends Activity {
             MediaProjectionCapture.deliverResult(resultCode, data);
             return;
         }
+        if (requestCode == REQ_PICK_BG) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                saveBackground(data.getData());
+            }
+            return;
+        }
         if (requestCode == REQ_FILE) {
             if (fileCallback == null) return;
             Uri[] result = null;
@@ -1246,6 +1280,142 @@ public class MainActivity extends Activity {
         return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r") + "\"";
     }
+
+    /**
+     * Simple mode swaps the launcher icon between the bundled 心夏 mark and the
+     * upstream DSH icon. An app icon is a manifest attribute, so the only way to
+     * change it without reinstalling is to keep two &lt;activity-alias&gt; entries
+     * and flip their component state. Enable the target first, disable the other
+     * second: the reverse order can leave zero launcher entries for a moment,
+     * and some launchers then drop the app from the home screen entirely.
+     */
+    private void applyLauncherIcon(boolean simple) {
+        String enable = getPackageName() + (simple ? ".LauncherSimple" : ".LauncherKokona");
+        String disable = getPackageName() + (simple ? ".LauncherKokona" : ".LauncherSimple");
+        PackageManager manager = getPackageManager();
+        try {
+            manager.setComponentEnabledSetting(new ComponentName(this, enable),
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP);
+            manager.setComponentEnabledSetting(new ComponentName(this, disable),
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP);
+        } catch (Exception ignored) {
+            // Never let an icon tweak take the settings page down.
+        }
+    }
+
+    private File backgroundFile() {
+        return new File(getFilesDir(), "background.jpg");
+    }
+
+    /** The user's background as a data URL, or "" when the bundled image applies. */
+    private String backgroundImageDataUrl() {
+        if (!backgroundFile().isFile()) return "";
+        if (backgroundCache != null) return backgroundCache;
+        try {
+            byte[] data = new byte[(int) backgroundFile().length()];
+            int offset = 0;
+            FileInputStream input = new FileInputStream(backgroundFile());
+            try {
+                int read;
+                while (offset < data.length
+                        && (read = input.read(data, offset, data.length - offset)) > 0) {
+                    offset += read;
+                }
+            } finally {
+                input.close();
+            }
+            backgroundCache = "data:image/jpeg;base64,"
+                    + Base64.encodeToString(data, Base64.NO_WRAP);
+            return backgroundCache;
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
+    /**
+     * Persist a picked image as the custom background.
+     *
+     * It is downscaled to at most 1280 px and re-encoded as JPEG 84 before being
+     * stored: the page fetches it as a data URL over the JS bridge, and a raw
+     * 12 MP photo would both blow the Binder transaction limit and cost real
+     * memory on a 2.9 GB device.
+     */
+    private void saveBackground(final Uri uri) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String error = null;
+                try {
+                    BitmapFactory.Options bounds = new BitmapFactory.Options();
+                    bounds.inJustDecodeBounds = true;
+                    InputStream probe = getContentResolver().openInputStream(uri);
+                    try {
+                        BitmapFactory.decodeStream(probe, null, bounds);
+                    } finally {
+                        if (probe != null) probe.close();
+                    }
+
+                    int sample = 1;
+                    while (bounds.outWidth / (sample * 2) >= 1280
+                            && bounds.outHeight / (sample * 2) >= 1280) {
+                        sample *= 2;
+                    }
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inSampleSize = sample;
+                    InputStream input = getContentResolver().openInputStream(uri);
+                    Bitmap decoded;
+                    try {
+                        decoded = BitmapFactory.decodeStream(input, null, options);
+                    } finally {
+                        if (input != null) input.close();
+                    }
+                    if (decoded == null) throw new IllegalStateException("无法解码这张图片");
+
+                    int width = decoded.getWidth();
+                    int height = decoded.getHeight();
+                    float scale = Math.min(1f, 1280f / Math.max(width, height));
+                    Bitmap scaled = scale < 1f
+                            ? Bitmap.createScaledBitmap(decoded,
+                                    Math.max(1, Math.round(width * scale)),
+                                    Math.max(1, Math.round(height * scale)), true)
+                            : decoded;
+
+                    FileOutputStream output = new FileOutputStream(backgroundFile());
+                    try {
+                        if (!scaled.compress(Bitmap.CompressFormat.JPEG, 84, output)) {
+                            throw new IllegalStateException("图片编码失败");
+                        }
+                        output.getFD().sync();
+                    } finally {
+                        output.close();
+                    }
+                    if (scaled != decoded) scaled.recycle();
+                    decoded.recycle();
+                } catch (Exception failure) {
+                    error = failure.getMessage() == null ? "设置背景失败" : failure.getMessage();
+                }
+                final String message = error;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (message != null) {
+                            ToastCompat.show(MainActivity.this, message);
+                            return;
+                        }
+                        backgroundCache = null;
+                        ToastCompat.show(MainActivity.this, "已设为自定义背景");
+                        if (web != null) {
+                            web.evaluateJavascript("window.__KOKONA_BG__("
+                                    + js(backgroundImageDataUrl()) + ");", null);
+                        }
+                    }
+                });
+            }
+        }, "kha-background").start();
+    }
+
 
     /**
      * Boot overlay backdrop: the same picture and the same 22% opacity the Web
@@ -1531,12 +1701,60 @@ public class MainActivity extends Activity {
         public void setSimpleMode(final boolean enabled) {
             getSharedPreferences("kha", MODE_PRIVATE).edit()
                     .putBoolean("simple_mode", enabled).apply();
+            // 简洁模式 also resets the launcher icon to the upstream DSH mark;
+            // leaving it on the 心夏 icon would contradict the "no custom
+            // graphics at all" promise of the mode.
+            applyLauncherIcon(enabled);
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
                     if (web == null) return;
                     web.evaluateJavascript(
                             "window.__KOKONA_SIMPLE__(" + enabled + ");", null);
+                }
+            });
+        }
+
+        /** Data URL of the custom background, or "" for the bundled 心夏 image. */
+        @JavascriptInterface
+        public String backgroundImage() {
+            return backgroundImageDataUrl();
+        }
+
+        @JavascriptInterface
+        public String backgroundInfo() {
+            return "{\"custom\":" + backgroundFile().isFile() + "}";
+        }
+
+        @JavascriptInterface
+        public void pickBackground() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.setType("image/*");
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    try {
+                        startActivityForResult(
+                                Intent.createChooser(intent, "选择背景图片"), REQ_PICK_BG);
+                    } catch (Exception error) {
+                        ToastCompat.show(MainActivity.this, "系统没有可用的图片选择器");
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void resetBackground() {
+            backgroundFile().delete();
+            backgroundCache = null;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (web != null) {
+                        web.evaluateJavascript("window.__KOKONA_BG__('');", null);
+                    }
+                    ToastCompat.show(MainActivity.this, "已恢复默认心夏喵");
                 }
             });
         }
