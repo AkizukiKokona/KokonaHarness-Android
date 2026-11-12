@@ -82,7 +82,7 @@
 
 <p align="center">
   <img src="docs/media/watch-chat.jpg" alt="手表上 DSH 正在执行命令并通过验收项" width="300">
-  <img src="docs/media/watch-home.jpg" alt="华强北手表桌面上的 KHA 图标" width="300">
+  <img src="docs/media/watch-dsh-home.jpg" alt="手表上的 DSH 首页（还没开始对话）" width="300">
 </p>
 
 **真正手机上的测试还没有**：本轮只有这台极限低端设备的成绩。主流手机（骁龙 / 天玑）上的启动与日常使用测试，将尽可能在本周末完成，并会一并制作完整的介绍视频喵。下面这栏先空着，测完就填：
