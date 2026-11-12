@@ -124,7 +124,7 @@ public final class AndroidCapabilities {
         json.put("screenshotSupported", true);
         json.put("screenshotMethod", Build.VERSION.SDK_INT >= 30 ? "accessibility" : "media_projection");
         if (Build.VERSION.SDK_INT < 30) {
-            json.put("screenshotNote", "Android 11 以下走 MediaProjection：调用 android_screenshot 会弹出系统授权框，允许后截图；FLAG_SECURE 窗口为黑屏");
+            json.put("screenshotNote", "Android 11 以下走 MediaProjection：首次调用会弹一次系统授权框，允许后截图；同一 App 会话内复用授权，不再重复弹框；FLAG_SECURE 窗口为黑屏");
         }
         json.put("notificationAccess", NotificationAccessService.isConnected());
         json.put("root", RunMode.isRootGranted(context));
@@ -343,8 +343,7 @@ public final class AndroidCapabilities {
     private static String setText(Uri uri) throws Exception {
         String text = uri.getQueryParameter("text");
         // An explicit empty string is a valid clear request; only a missing
-        // parameter is an error. (callBridge used to drop "", so every clear
-        // arrived as null and was rejected with "missing text".)
+        // parameter is an error.
         if (text == null) throw new IllegalArgumentException("missing text (empty string clears)");
         Sel sel = new Sel();
         sel.id = emptyToNull(uri.getQueryParameter("id"));
@@ -359,35 +358,41 @@ public final class AndroidCapabilities {
         if (!target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)) {
             throw new IllegalStateException("系统拒绝写入文字");
         }
-        // ACTION_SET_TEXT returns true even when the app ignores it (wrong node,
-        // custom input), so trust a freshly read tree rather than the return value.
-        String actual = verifyText(sel, text);
+        // The action was accepted. A matching readback is a hard confirmation; an
+        // empty readback is NOT failure -- WebView inputs never expose their text
+        // through accessibility, and reporting failure made agents retry and write
+        // twice. Return ok with verified:false + a reason in that case.
+        String actual = readbackText(sel);
         JSONObject json = ok();
         json.put("text", text);
         json.put("actual", actual);
-        json.put("verified", true);
+        if (text.equals(actual)) {
+            json.put("verified", true);
+        } else {
+            json.put("verified", false);
+            json.put("reason", "写入已被系统接受，但节点树未暴露文本（常见于 WebView 输入框），"
+                    + "无法通过回读确认；请用 android_screenshot 或 android_ui 核对。");
+        }
         return json.toString();
     }
 
     /**
-     * Re-read the node tree after a write and confirm the text actually landed.
-     * Throws (so the MCP call fails) instead of reporting ok on faith.
+     * Best-effort readback of the target's text. Returns "" when the node does
+     * not expose it (e.g. a WebView input); callers must treat that as
+     * "unverifiable", never as "the write failed".
      */
-    private static String verifyText(Sel sel, String expected) throws InterruptedException {
-        String actual = null;
+    private static String readbackText(Sel sel) throws InterruptedException {
         for (int attempt = 0; attempt < 4; attempt++) {
             AccessibilityNodeInfo root = ScreenshotAccessibilityService.rootNode();
             AccessibilityNodeInfo node = root == null ? null
                     : (sel.any() ? findFirst(root, sel, 0) : findEditable(root, 0));
             if (node != null) {
                 CharSequence got = node.getText();
-                actual = got == null ? "" : got.toString();
-                if (actual.equals(expected)) return actual;
+                if (got != null) return got.toString();
             }
             Thread.sleep(60);
         }
-        throw new IllegalStateException("写入后读回不一致：期望 \"" + expected
-                + "\"，实际 \"" + (actual == null ? "" : actual) + "\"");
+        return "";
     }
 
     private static AccessibilityNodeInfo findEditable(AccessibilityNodeInfo node, int depth) {
@@ -451,6 +456,8 @@ public final class AndroidCapabilities {
         if (match == null) throw new IllegalStateException("界面上找不到匹配节点");
         AccessibilityNodeInfo target = match;
         String label = op;
+        Boolean verified = null;
+        String actualText = null;
         switch (op) {
             case "click":
             case "long_click": {
@@ -480,14 +487,13 @@ public final class AndroidCapabilities {
                 if (!target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)) {
                     throw new IllegalStateException("系统拒绝写入文字");
                 }
-                // Verify against a refreshed node, not the action's return value.
+                // Readback is best-effort: WebView inputs never expose text, so a
+                // mismatch is "unverified", not "failed" -- mirror android_set_text
+                // (ok + verified:false + reason) instead of throwing.
                 target.refresh();
                 CharSequence got = target.getText();
-                String actual = got == null ? "" : got.toString();
-                if (!actual.equals(value)) {
-                    throw new IllegalStateException("写入后读回不一致：期望 \"" + value
-                            + "\"，实际 \"" + actual + "\"");
-                }
+                actualText = got == null ? "" : got.toString();
+                verified = actualText.equals(value);
                 break;
             }
             case "scroll_forward":
@@ -544,6 +550,14 @@ public final class AndroidCapabilities {
         JSONObject json = ok();
         json.put("op", label);
         json.put("node", describe(target, 0));
+        if (verified != null) {
+            json.put("verified", verified);
+            json.put("actual", actualText);
+            if (!verified) {
+                json.put("reason", "写入已被系统接受，但节点树未暴露文本（常见于 WebView 输入框），"
+                        + "无法通过回读确认；请用 android_screenshot 或 android_ui 核对。");
+            }
+        }
         return json.toString();
     }
 

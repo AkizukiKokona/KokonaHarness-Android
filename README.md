@@ -15,24 +15,24 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.1.6**（155）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r45**
+> Android 8.1+ · arm64 · 当前 **1.1.7**（156）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r46**
 
-## 实测性能：在手表上跑赢系统原生程序
+## 实测性能：手表上的启动开销
 
-> 测试时间 2026-11-11 · 运行时 r38 → r42 · 设备是一台华强北智能手表
+> 测试时间 2026-11-12 · 运行时 r45 → r46 · 设备是一台华强北智能手表（Android 9 / SDK 28）
 
-先把设备交代清楚，因为结论的说服力全在这里。这颗芯片是**紫光展锐 W527**（设备内上报 `UWS6152`）——12nm、一大核三小核（1×Cortex-A75 + 3×Cortex-A55），按[紫光展锐官方](https://www.unisoc.com/cn/product/SmartWearables/W527)的定位属于中高端穿戴平台，放在华强北里已经算高端；但按手机 / 旗舰的尺度，它是一台**极限低端设备**：单核性能约为 2024 年旗舰的 1/5–1/6，进程创建开销远高于主流手机（本机实测建进程 24ms，主流约 3–8ms），系统 Android 9.0、2.9GB 内存、实际主频约 1.82GHz。拿它测启动速度，等于把启动层的开销放大到肉眼可见。
+先把设备交代清楚。这颗芯片是**紫光展锐 W527**（设备内上报 `UWS6152`）——12nm、一大核三小核（1×Cortex-A75 + 3×Cortex-A55），按[紫光展锐官方](https://www.unisoc.com/cn/product/SmartWearables/W527)的定位属于中高端穿戴平台；但按手机 / 旗舰的尺度，它是一台**极限低端设备**：单核性能约为 2024 年旗舰的 1/5–1/6，进程创建开销远高于主流手机（本机实测建进程 24ms，主流约 3–8ms），系统 Android 9.0、2.9GB 内存、实际主频约 1.82GHz。
 
-### 启动耗时（同一程序，3 轮 × 20 次均值）
+### 启动耗时（同一程序，3 轮 × 20 次均值，含 DNS/locale 准备）
 
-| 路径 | 单次耗时 | 说明 |
-|---|---|---|
-| **`kokona-grun`（r42，当前）** | **19–23 ms** | 原生 ELF launcher，一次 `execve` 直达 loader |
-| 裸 loader（跳过包装） | 5 ms | 理论下限，执行体本身的开销 |
-| bionic `/system/bin/true` | 24 ms | 系统原生程序的基线 |
-| `kokona-grun`（r38，优化前） | 175 ms | 旧的 170 行 sh 脚本路径 |
+| 路径 | 单次耗时 |
+|---|---|
+| **`kokona-grun`（r45 / r46）** | **约 40 ms 量级** |
+| `kokona-grun`（r38，旧的 170 行 sh 脚本） | 175 ms |
 
-**r42 的启动已经快过系统自带的 bionic 程序（19–23ms vs 24ms），比 r38 提速约 8 倍。** 裸 loader 只要 5ms，说明真正干活的执行体极轻，剩下的差距是必要的环境准备（DNS / locale / 前缀），不是运行时本身重。
+**从 r38 的 175ms 压到约 40ms 量级，提速约 4 倍。** 剩余开销主要来自每次启动都要做的环境准备（DNS 校验、locale、前缀、清理 bionic 的 `LD_*`），不是 glibc 本身重。
+
+> 早期版本里出现过「裸 loader 6ms / bionic 26ms / 19–23ms」这类数字，它们来自不同的设备与测量方法（是否含环境准备、冷/热启动、单次 vs 多次均值），与 r45 实测的 40ms 量级不可直接比较，故不再作为结论引用。要做对比请在**同一设备、同一方法**下重测。
 
 ### 这台设备的计算基线
 
@@ -42,16 +42,15 @@
 | Shell 整数循环 20 万次 | 2561 ms |
 | 进程创建（`/system/bin/true`） | 24 ms（主流约 3–8 ms） |
 
-设备不是慢到不能用，但**高频创建进程的成本极高**——这正是 r38 慢到 175ms 的底层原因：旧脚本每跑一次都要 fork 一串 `dirname` / `tr` / `getprop`，在这台机器上每一步都被放大。
+设备不是慢到不能用，但**高频创建进程的成本极高**——这正是旧脚本慢的底层原因：它每跑一次都要 fork 一串 `dirname` / `tr` / `getprop`，在这台机器上每一步都被放大。
 
-### 为什么这是我们的竞争力
+### 为什么这是竞争力
 
-- **启动税已压到低于 bionic 原生程序**：在这里跑一个 glibc 程序（19–23ms），比跑一个系统原生程序（24ms）还快。
-- **相比优化前约 8 倍**：175ms → 19–23ms。
-- **执行体极轻**：裸 loader 5ms，剩余是必要环境准备，不是架构包袱。
-- **主流手机预计 3–6ms**：这台 1×A75 + 3×A55 @1.82GHz 的极限设备都能跑赢 bionic，更好的机器只会更快。
+- **从 175ms 到约 40ms 量级**：启动税压掉了约 4 倍，且不再依赖 shell 与外部命令。
+- **一次 `execve` 直达 loader**：原生 ELF launcher 在进程内完成准备，没有 toybox sh、没有 fork、没有 `getprop`。
+- **开销是固定的启动税**：与程序运行时长、IO 次数无关，和 proot 那种按 syscall 逐次拦截的性质不同。
 
-> 一句话：**KHA 的 glibc 运行路径在低端手表上做到 19–23ms 启动，快于系统原生 bionic 的 24ms；相比优化前 175ms 提速约 8 倍，主流手机预计 3–6ms。速度问题已经翻篇。**
+> 一句话：**KHA 的 glibc 运行路径把低端手表上的启动从 175ms 压到约 40ms 量级（约 4 倍），开销是固定的启动税，不是架构包袱。**
 
 ## 路线：从引擎到兼容层，全程不用 PRoot
 
@@ -266,7 +265,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 155 / versionName 1.1.6
+│   ├── AndroidManifest.xml        # versionCode 156 / versionName 1.1.7
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -312,7 +311,7 @@ KokonaHarness-Android/
 <details>
 <summary>展开开发记录</summary>
 
-**1.1.0**（运行时 r39）把 `kokona-grun` 从 170 行 sh 包装脚本**整个换成原生 ELF launcher** （`app/native/kokona-run.c`）：进程内完成 DNS 校验、locale、前缀与环境准备，最后一次 `execve()` 直达 glibc loader，**没有 toybox sh、没有 fork、没有外部命令**。设备实测旧脚本单次 175–192ms，其中 65% 花在 `dirname`/`tr`/`getprop`/`cd+pwd` 的 fork+exec 上；同一程序裸 loader 只要 6ms、bionic 基线 26ms——瓶颈从来不是 glibc。七个 `k*` 工具改成同一个 ELF 按 `argv[0]` 分派（设备端 tar 会丢链接，所以是实体副本），新增 `--exec`（跳过准备）与 `--shell`（一次准备、连续跑多个程序）。同批修掉：无 locale 数据时 `LANG`/`LC_ALL` 一起强制为 C（消除 `locale` 的三行 `Cannot set LC_*`）、DNS 先比对再写（`resolv.conf` 的 mtime 不再无故变化）、热路径彻底不调 `getprop`、`--version`/`--help` 给友好输出。另把「打开目录」统一按平台分派：Android 走系统文件管理器 （`ACTION_VIEW` + externalstorage 文档 URI），Windows / WSL / macOS 行为一行未动；补上 `KOKONA_ANDROID=1` 供运行时判定平台（Node 在 Android 上也报 `linux`）。版本号 1.1.0 / versionCode 149，正式发行版。
+**1.1.0**（运行时 r39）把 `kokona-grun` 从 170 行 sh 包装脚本**整个换成原生 ELF launcher** （`app/native/kokona-run.c`）：进程内完成 DNS 校验、locale、前缀与环境准备，最后一次 `execve()` 直达 glibc loader，**没有 toybox sh、没有 fork、没有外部命令**。设备实测旧脚本单次 175–192ms，其中 65% 花在 `dirname`/`tr`/`getprop`/`cd+pwd` 的 fork+exec 上；（当时记录的 6ms/26ms 对比数据测量方法不同，已不再作为结论引用）——瓶颈从来不是 glibc。七个 `k*` 工具改成同一个 ELF 按 `argv[0]` 分派（设备端 tar 会丢链接，所以是实体副本），新增 `--exec`（跳过准备）与 `--shell`（一次准备、连续跑多个程序）。同批修掉：无 locale 数据时 `LANG`/`LC_ALL` 一起强制为 C（消除 `locale` 的三行 `Cannot set LC_*`）、DNS 先比对再写（`resolv.conf` 的 mtime 不再无故变化）、热路径彻底不调 `getprop`、`--version`/`--help` 给友好输出。另把「打开目录」统一按平台分派：Android 走系统文件管理器 （`ACTION_VIEW` + externalstorage 文档 URI），Windows / WSL / macOS 行为一行未动；补上 `KOKONA_ANDROID=1` 供运行时判定平台（Node 在 Android 上也报 `linux`）。版本号 1.1.0 / versionCode 149，正式发行版。
 
 **1.0.48**（运行时 r38）`kldd` 连修三轮才走对：`kokona-glibc/bin/ldd` 是 `/system/bin/sh` 脚本，r36 把它交给 loader → `invalid ELF header`；r37 改用 `/system/bin/sh` 却顺手导出了 `LD_LIBRARY_PATH`，bionic 的 sh 自己去加载 glibc 的 `libc.so`（链接脚本）→ `bad ELF magic`。现在**绕开脚本**，直接用 loader 自带的 `--list` 模式，`--library-path` 同时带上前缀与 `~/.local/lib/kokona-glibc`，补充库照样解析，且**一个环境变量都不碰**（skill 里那条禁令就是这么来的）。同批还修了 `dns.servers` 逐行校验与多条 nameserver 拼成一行的老问题、无障碍未授权时改为打开系统设置页、开屏改成分阶段反馈：解压阶段有真实字节进度，显示连续百分比；启动引擎阶段没有可测进度，只保留转圈与「（没有卡死喵）」安抚文字，不再出现 0→88→100 那种跳数字。版本号 1.0.48（versionCode 148），本轮为本地试装包，未发 Release。
 
@@ -367,14 +366,16 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.1.6**（versionCode 155）
+- App：**1.1.7**（versionCode 156）
 - DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r45**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r46**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.1.6（本次）**：按缺陷清单修功能项。**D4 文本输入闭环**：`android_set_text` 写入后**回读节点树校验**，读回不一致直接返回失败（根因：此前只要 `performAction` 返回 true 就报 ok；且 `callBridge` 过滤空字符串，清空请求到 Java 变成 missing text）。清空支持 `text=""` 或 `clear=true`；`node_action set_text` 同步加回读校验。**DOC-1** `android_status.screenshotSupported` 改为恒 true 并加 `screenshotMethod`（SDK<30 由 MediaProjection 支撑）。**DOC-4** `kldd` 对 bionic/脚本/静态 ELF 直接非零 rc 并打印原因（根因：loader `--list` 对非 glibc 目标也返回 0）。**DOC-5** `--version` 补版本号。**DOC-3** `--shell` 裸名解析同时尝试 prefix `bin/` 与 runtime `bin/`，k* 启动器在 --shell 内可用。**DOC-2/DOC-6** 文档注明 `android_foreground` 可能返回 IME、set_text 清空与校验语义。运行时 r45。
+**1.1.7（本次）**：修 r45 遗留。**P0 D4 读回假阴性**：`android_set_text` 根因是 WebView 输入框的 `text` 属性恒空，旧代码把「读回为空」当成失败抛错，导致 Agent 看到 `ok:false` 重试、重复写入。现改为：读回匹配 → `verified:true`；读回为空/不一致 → **`ok:true` + `verified:false` + `reason`**（不再 `ok:false`）；清空仍 `verified:true`；`node_action set_text` 同步。**P1**：`android_status.screenshotSupported` 恒 true + `screenshotMethod`；MediaProjection 授权缓存（首次弹框、之后同一会话复用不弹）；`--shell` 内 k* 已可用（`resolve_bare` 兼容 runtime bin）。**P2**：文档补 WebView text 恒空、已授权不弹框；README 性能段改为 r45 约 40ms 量级，并注明旧 6/26/19–23ms 测量方法不同、不再引用。运行时 r46。
+
+**1.1.6**：按缺陷清单修功能项。**D4 文本输入闭环**：`android_set_text` 写入后**回读节点树校验**，读回不一致直接返回失败（根因：此前只要 `performAction` 返回 true 就报 ok；且 `callBridge` 过滤空字符串，清空请求到 Java 变成 missing text）。清空支持 `text=""` 或 `clear=true`；`node_action set_text` 同步加回读校验。**DOC-1** `android_status.screenshotSupported` 改为恒 true 并加 `screenshotMethod`（SDK<30 由 MediaProjection 支撑）。**DOC-4** `kldd` 对 bionic/脚本/静态 ELF 直接非零 rc 并打印原因（根因：loader `--list` 对非 glibc 目标也返回 0）。**DOC-5** `--version` 补版本号。**DOC-3** `--shell` 裸名解析同时尝试 prefix `bin/` 与 runtime `bin/`，k* 启动器在 --shell 内可用。**DOC-2/DOC-6** 文档注明 `android_foreground` 可能返回 IME、set_text 清空与校验语义。运行时 r45。
 
 **1.1.5**：按实测缺陷清单修复。**P0-1 git HTTPS**：内置 git 的信任锚硬编码为 Termux 路径、且不认 `SSL_CERT_FILE`；已在引擎与终端环境补 `GIT_SSL_CAINFO=<runtime>/etc/tls/cert.pem`，HTTPS 远端恢复（本地仓库不受影响）。**P0-2 通知使用权**：`android_open_settings` 新增 `notification_listener` 面板直达系统「通知使用权」，错误提示也改为指向该系统页，不再引导到走不通的「环境高级设置」。**P0-3 截图**：修 `android_screenshot` 的 `Body is unusable`（响应体被读两次，改为只读一次）；SDK<30 改走 `MediaProjection`（系统授权弹窗 → VirtualDisplay/ImageReader 抓一帧 → PNG，不落盘），不再只报「不可用」。**文档**：`python-runtime` 移除「curses/readline 已内置」的错误声明；`glibc-runtime` 注明 `kldd` 仅适用 glibc 目标；`android-capabilities` 更新截图/通知说明。运行时 r44（skills 与 knhplus-mcp 更新，升级需重解压一次）。
 

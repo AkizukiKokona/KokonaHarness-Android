@@ -22,19 +22,21 @@ import java.util.concurrent.TimeUnit;
  * Screen capture through MediaProjection, for API 28-29 where
  * {@code AccessibilityService.takeScreenshot()} does not exist yet (API 30+).
  *
- * <p>The user sees the standard system capture-consent dialog; once granted, a
- * {@link VirtualDisplay} mirrors the screen into an {@link ImageReader} and one
- * frame is returned as PNG. Nothing is written to disk. Every exit path stops
- * the projection and releases the display/reader so the "is recording" state and
- * the encoder are not left behind.</p>
+ * <p>The consent token is cached for the app session: the first capture shows
+ * the system dialog, later captures reuse the same {@link MediaProjection} (no
+ * second dialog) until the user revokes it or the app is destroyed. Every
+ * capture still releases its own VirtualDisplay/ImageReader; the projection
+ * itself stays alive for reuse.</p>
  *
- * <p>Windows with {@code FLAG_SECURE} capture as black — that is a system
- * behaviour, not a failure of this path.</p>
+ * <p>Windows with {@code FLAG_SECURE} capture as black — a system behaviour,
+ * not a failure of this path.</p>
  */
 public final class MediaProjectionCapture {
     /** Request code used by MainActivity.onActivityResult. */
     public static final int REQUEST_CODE = 5001;
 
+    private static final Object LOCK = new Object();
+    private static volatile MediaProjection cachedProjection;
     private static volatile CountDownLatch permissionLatch;
     private static volatile Intent permissionData;
     private static volatile int permissionResult = Activity.RESULT_CANCELED;
@@ -50,16 +52,49 @@ public final class MediaProjectionCapture {
         if (latch != null) latch.countDown();
     }
 
+    /** Stop and forget the cached projection (call from Activity.onDestroy). */
+    public static void release() {
+        synchronized (LOCK) {
+            MediaProjection projection = cachedProjection;
+            cachedProjection = null;
+            if (projection != null) {
+                try {
+                    projection.stop();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
     /**
      * Capture one frame. Must be called off the UI thread: it blocks while the
-     * permission dialog is up, then while the first frame arrives.
+     * consent dialog is up (first call only) and while the frame arrives.
      */
     public static byte[] capture(Activity activity) throws Exception {
-        if (activity == null) throw new IllegalStateException("无法截图：当前没有可用的界面");
-        MediaProjectionManager manager =
-                (MediaProjectionManager) activity.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-        if (manager == null) throw new IllegalStateException("系统不支持屏幕捕获");
+        synchronized (LOCK) {
+            if (activity == null) throw new IllegalStateException("无法截图：当前没有可用的界面");
+            MediaProjectionManager manager =
+                    (MediaProjectionManager) activity.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+            if (manager == null) throw new IllegalStateException("系统不支持屏幕捕获");
 
+            MediaProjection projection = cachedProjection;
+            if (projection == null) {
+                projection = requestProjection(activity, manager);
+                cachedProjection = projection;
+            }
+            try {
+                return grabFrame(activity, projection);
+            } catch (Exception error) {
+                // A dead/failed session would fail every future call; drop it so
+                // the next capture re-asks for consent instead of looping.
+                dropCached(projection);
+                throw error;
+            }
+        }
+    }
+
+    private static MediaProjection requestProjection(Activity activity,
+                                                     MediaProjectionManager manager) throws Exception {
         final CountDownLatch latch = new CountDownLatch(1);
         permissionLatch = latch;
         permissionData = null;
@@ -84,10 +119,24 @@ public final class MediaProjectionCapture {
         if (result != Activity.RESULT_OK || data == null) {
             throw new IllegalStateException("已取消屏幕捕获授权");
         }
-
-        MediaProjection projection = manager.getMediaProjection(result, data);
+        final MediaProjection projection = manager.getMediaProjection(result, data);
         if (projection == null) throw new IllegalStateException("无法创建屏幕捕获会话");
+        // The system fires onStop when the user revokes or the session dies.
+        try {
+            projection.registerCallback(new MediaProjection.Callback() {
+                @Override
+                public void onStop() {
+                    synchronized (LOCK) {
+                        if (cachedProjection == projection) cachedProjection = null;
+                    }
+                }
+            }, null);
+        } catch (Throwable ignored) {
+        }
+        return projection;
+    }
 
+    private static byte[] grabFrame(Activity activity, MediaProjection projection) throws Exception {
         DisplayMetrics metrics = new DisplayMetrics();
         activity.getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
         final int width = metrics.widthPixels;
@@ -138,8 +187,18 @@ public final class MediaProjectionCapture {
             if (display != null) display.release();
             if (reader != null) reader.close();
             if (padded != null && !padded.isRecycled()) padded.recycle();
-            projection.stop();
-            permissionLatch = null;
+        }
+    }
+
+    private static void dropCached(MediaProjection projection) {
+        synchronized (LOCK) {
+            if (cachedProjection == projection) {
+                cachedProjection = null;
+                try {
+                    projection.stop();
+                } catch (Throwable ignored) {
+                }
+            }
         }
     }
 }

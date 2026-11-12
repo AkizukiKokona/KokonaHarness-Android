@@ -450,7 +450,7 @@ public class MainActivity extends Activity {
         return currentActivity;
     }
 
-    static final String APP_VERSION = "1.1.6";
+    static final String APP_VERSION = "1.1.7";
 
     private EngineService.Listener engineListener;
 
@@ -1394,6 +1394,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (currentActivity == this) currentActivity = null;
+        MediaProjectionCapture.release();
         if (terminalOverlay != null) terminalOverlay.hide();
         try {
             Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener);

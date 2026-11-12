@@ -49,7 +49,7 @@ KNHPlus 是内置 MCP 服务（`knhplus`），工具以 `android_*` 命名。全
 - 陌生界面先 `android_ui` 或截图，再 `android_find` 精确定位；能用 id 就不用文字。
 - 跨应用流程：`android_open` → `android_wait_for` → `android_node_action`/`android_click`。
 - 系统导航优先 `android_global`；坐标直接取节点 `bounds` 中心。
-- `android_set_text` 写入后会回读节点树校验，**读回不一致直接返回失败**（不再假报 ok）；清空输入框用 `text=""` 或 `clear=true`。`android_foreground` 可能拿到 IME 窗口，取聚焦应用请用 `android_windows`。
+- `android_set_text` 写入后会回读节点树：能读到就 `verified:true`；**WebView 输入框的 `text` 常恒空，此时返回 `ok:true` + `verified:false` + `reason`（这不是失败，不要重试）**，以截图 / 节点结构变化为准。清空输入框用 `text=""` 或 `clear=true`。`android_foreground` 可能拿到 IME 窗口，取聚焦应用请用 `android_windows`。
 - 通知/媒体会话未授权时，用 `android_open_settings panel=notification_listener` 直达系统「通知使用权」并勾选 KHA。
 - 不要在没有明确指令时锁屏、清通知、打开未知链接或点击有副作用的按钮。
 
@@ -64,7 +64,7 @@ KNHPlus 是内置 MCP 服务（`knhplus`），工具以 `android_*` 命名。全
 
 ## 限制
 
-- `android_screenshot`：Android 11+ 走无障碍；低于 11 走 MediaProjection（弹一次系统授权框，允许后截一帧，不落盘）。`android_global` 的 `screenshot` 仅 Android 11+，低版本请用 `android_screenshot`。`FLAG_SECURE` 窗口会截成黑屏（系统行为）。`android_status.screenshotSupported` 恒为 true（SDK<30 由 MediaProjection 支撑）。锁屏全局动作仅 Android 9+。
+- `android_screenshot`：Android 11+ 走无障碍；低于 11 走 MediaProjection（**首次弹一次系统授权框，允许后同一 App 会话内复用、不再弹框**，直接返回图像，不落盘）。`android_global` 的 `screenshot` 仅 Android 11+，低版本请用 `android_screenshot`。`FLAG_SECURE` 窗口会截成黑屏（系统行为）。`android_status.screenshotSupported` 恒为 true（SDK<30 由 MediaProjection 支撑）。锁屏全局动作仅 Android 9+。
 - 无障碍/通知使用权必须用户在系统设置手动开启。
 - Android 10+ 后台读剪贴板可能为空。
 - 自绘控件可能不暴露可编辑/可点击节点；此时改用坐标手势。

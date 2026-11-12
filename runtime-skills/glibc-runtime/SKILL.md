@@ -51,6 +51,8 @@ kgetconf LONG_BIT                # ✓ 等价的 k 前缀启动器
 ```
 
 > loader 自身不做 `PATH` 查找；裸名的解析由 launcher 完成，所以上面两种写法都能跑。
+>
+> `--shell` 内同样生效：裸名会先查 `<prefix>/bin/`、再查 runtime 的 `<prefix>/../bin/`，所以 `klocale` / `kgetconf` 等 k* 启动器在 `--shell` 里也能用。
 
 ### glibc 工具用 `k` 前缀名
 
@@ -75,7 +77,7 @@ kgetconf LONG_BIT                # ✓ 等价的 k 前缀启动器
 ## 性能特征
 
 - `kokona-grun` 是**原生 ELF launcher**（`app/native/kokona-run.c`），不是 sh 脚本：进程内准备 DNS / locale / 前缀 / 环境变量，最后一次 `execve()` 直达 glibc loader。零 toybox sh 启动、零 fork、零外部命令、零管道。
-- 旧版 170 行脚本在低端机上单次 175–192ms，其中约 65% 花在 DNS 段的 `dirname` / `tr` / `getprop` / `cd+pwd`；同一程序直接 exec loader 约 6ms，bionic 程序基线约 26ms。**慢的一直是脚本层，不是 glibc**。
+- 旧版 170 行脚本在低端机上单次 175–192ms，其中约 65% 花在 DNS 段的 `dirname` / `tr` / `getprop` / `cd+pwd`。**慢的一直是脚本层，不是 glibc**。（具体毫秒数随设备与测量方法差异很大，早期记录的 6ms/26ms 等对比数据不再作为结论引用；当前实测量级见 README。）
 - 现在每次调用的开销是**固定的启动税**，与程序运行时长、IO 次数无关；这和 proot 那种按 syscall 逐次 ptrace 拦截、随 IO 增长的开销性质完全不同。
 - `--exec` 连环境准备都跳过；`--shell` 在一个进程里连续跑多个 glibc 程序，只付每个程序的 loader 成本。
 
