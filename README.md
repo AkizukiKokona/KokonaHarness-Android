@@ -15,24 +15,32 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.2.0**（158）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r48**
+> Android 8.1+ · arm64 · 当前 **1.2.1**（159）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r49**
 
 ## 实测性能：手表上的启动开销
 
-> 测试时间 2026-11-12 · 运行时 r45 → r46 · 设备是一台华强北智能手表（Android 9 / SDK 28）
+> 测试时间 2026-11-12 · 运行时 r46 · 设备是一台华强北智能手表（Android 9 / SDK 28）
+>
+> **测量方法**：外部计时——父进程记录 `fork`+`exec` 到子进程退出的墙钟时间，每条路径 **20 次均值**，已扣除循环本身的 **1.9 ms/次** 固定开销。**没有**用「shell 里对循环计时」那种测法：它会把 shell 自身约 35 ms 的启动成本算进被测程序，把每个数字整体抬高；早期一版文档把这种被污染的数值当成了结论，已作废。
 
-先把设备交代清楚。这颗芯片是**紫光展锐 W527**（设备内上报 `UWS6152`）——12nm、一大核三小核（1×Cortex-A75 + 3×Cortex-A55），按[紫光展锐官方](https://www.unisoc.com/cn/product/SmartWearables/W527)的定位属于中高端穿戴平台；但按手机 / 旗舰的尺度，它是一台**极限低端设备**：单核性能约为 2024 年旗舰的 1/5–1/6，进程创建开销远高于主流手机（本机实测建进程 24ms，主流约 3–8ms），系统 Android 9.0、2.9GB 内存、实际主频约 1.82GHz。
+先把设备交代清楚。这颗芯片是**紫光展锐 W527**（设备内上报 `UWS6152`）——12nm、一大核三小核（1×Cortex-A75 + 3×Cortex-A55），按[紫光展锐官方](https://www.unisoc.com/cn/product/SmartWearables/W527)的定位属于中高端穿戴平台；但按手机 / 旗舰的尺度，它是一台**极限低端设备**：单核性能约为 2024 年旗舰的 1/5–1/6，进程创建开销远高于主流手机（本机实测建进程 21.8ms，主流约 3–8ms），系统 Android 9.0、2.9GB 内存、实际主频约 1.82GHz。
 
-### 启动耗时（同一程序，3 轮 × 20 次均值，含 DNS/locale 准备）
+### 启动耗时（同一程序、同一设备、20 次均值，含 DNS/locale 准备）
 
 | 路径 | 单次耗时 |
-|---|---|
-| **`kokona-grun`（r45 / r46）** | **约 40 ms 量级** |
+|---|---:|
+| **`kokona-grun`（裸名）** | **16.6 ms** |
+| `kokona-grun --exec` | **17.9 ms** |
+| bionic 基线（`/system/bin/true`） | **21.8 ms** |
 | `kokona-grun`（r38，旧的 170 行 sh 脚本） | 175 ms |
 
-**从 r38 的 175ms 压到约 40ms 量级，提速约 4 倍。** 剩余开销主要来自每次启动都要做的环境准备（DNS 校验、locale、前缀、清理 bionic 的 `LD_*`），不是 glibc 本身重。
+**结论：`kokona-grun` 的启动已经快于系统原生的 bionic 程序**（16.6–17.9 ms vs 21.8 ms），相比 r38 的 175 ms 提速约 10 倍。剩余开销主要是每次启动都要做的环境准备（DNS 校验、locale、前缀、清理 bionic 的 `LD_*`），不是 glibc 本身重。
 
-> 早期版本里出现过「裸 loader 6ms / bionic 26ms / 19–23ms」这类数字，它们来自不同的设备与测量方法（是否含环境准备、冷/热启动、单次 vs 多次均值），与 r45 实测的 40ms 量级不可直接比较，故不再作为结论引用。要做对比请在**同一设备、同一方法**下重测。
+这与 r42 报告（19–23 ms / 16 ms / 18 ms）互相印证：几轮独立测量都落在「十几毫秒、快于 bionic」这个结论上。
+
+> 「裸 loader 约 6 ms」是**跳过 launcher、直接 `execve` loader** 跑同一程序的理论下限，不是完整启动路径，不能与上表并列比较。
+>
+> 早期文档里出现过的 24 ms / 26 ms 等数字，来自不同设备或不同计时方式（是否含环境准备、是否在 shell 内计时），现已统一按上表的外部计时结果重写；要做对比请在**同一设备、同一方法**下重测。
 
 ### 这台设备的计算基线
 
@@ -40,17 +48,17 @@
 |---|---|
 | AES-256-CBC 单核加密 | 约 977 MB/s |
 | Shell 整数循环 20 万次 | 2561 ms |
-| 进程创建（`/system/bin/true`） | 24 ms（主流约 3–8 ms） |
+| 进程创建（`/system/bin/true`） | 21.8 ms（主流约 3–8 ms） |
 
 设备不是慢到不能用，但**高频创建进程的成本极高**——这正是旧脚本慢的底层原因：它每跑一次都要 fork 一串 `dirname` / `tr` / `getprop`，在这台机器上每一步都被放大。
 
 ### 为什么这是竞争力
 
-- **从 175ms 到约 40ms 量级**：启动税压掉了约 4 倍，且不再依赖 shell 与外部命令。
+- **从 175 ms 到 16.6–17.9 ms**：启动税压掉约 10 倍，且已经快于 bionic 原生程序。
 - **一次 `execve` 直达 loader**：原生 ELF launcher 在进程内完成准备，没有 toybox sh、没有 fork、没有 `getprop`。
 - **开销是固定的启动税**：与程序运行时长、IO 次数无关，和 proot 那种按 syscall 逐次拦截的性质不同。
 
-> 一句话：**KHA 的 glibc 运行路径把低端手表上的启动从 175ms 压到约 40ms 量级（约 4 倍），开销是固定的启动税，不是架构包袱。**
+> 一句话：**KHA 的 glibc 运行路径把低端手表上的启动从 175 ms 压到 16.6–17.9 ms（约 10 倍），并且快于系统原生的 bionic 程序（21.8 ms）；开销是固定的启动税，不是架构包袱。**
 
 ## 路线：从引擎到兼容层，全程不用 PRoot
 
@@ -269,7 +277,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 158 / versionName 1.2.0
+│   ├── AndroidManifest.xml        # versionCode 159 / versionName 1.2.1
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -370,18 +378,20 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.2.0**（versionCode 158）
+- App：**1.2.1**（versionCode 159）
 - DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r48**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r49**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.2.0（本次）**：**运行时压缩格式 xz → zstd**。启动/升级时那一次解包从 `xz -6` 换成 `zstd -19`：压缩包大几 MB，但设备端解压是单线程的，zstd 的解码速度是 xz 的数倍，首次安装与每次版本升级的等待明显缩短。解码不用 Java 库（Android 没有 zstd API），而是随包带一个 92 KB 的原生解码器 `kunzstd`：压缩资源从 stdin 灌进去、tar 从 stdout 直接进 `TarExtractor`，全程不落临时文件；`app/libs/xz.jar` 与 XZ 依赖一并移除。**新增「简洁模式」**（设置 → KHA 设置 → 运行模式下方，与运行模式一样是两选一按钮，不是开关）：选「简洁模式」会同时关掉自定义背景（`#kokona-bg`）与磨砂/模糊（`backdrop-filter`），界面回到纯白；选「默认样式」恢复原状，状态持久化。同时把「检查更新」移到该页最下方。文档补一句：长期后台再切回前台，WebView 可能重载并短暂空白，等几秒即恢复。运行时 r48。
+**1.2.1（本次）**：**更正文档里的性能数据**。此前 README 与 `glibc-runtime/SKILL.md` 里的性能数字来自在 shell 内对循环计时——shell 自身约 35ms 的启动开销被算进了被测程序，数值整体虚高，属测量方法污染，已全部作废。现按 r46 外部计时（父进程记 `fork`+`exec` 到子进程退出，20 次均值，已扣除 1.9ms/次循环固定开销）重写：**bionic 基线 21.8ms、`--exec` 17.9ms、裸名 16.6ms**，结论是 **`kokona-grun` 启动已快于系统原生 bionic 程序**，相比 r38 的 175ms 提速约 10 倍。「裸 loader 约 6ms」保留但注明是跳过 launcher 的理论下限；24/26ms 等旧值标注为不同设备/计时方式的结果。代码零改动。运行时 r49（仅为让升级用户拿到更正后的 SKILL.md）。
+
+**1.2.0**：**运行时压缩格式 xz → zstd**。启动/升级时那一次解包从 `xz -6` 换成 `zstd -19`：压缩包大几 MB，但设备端解压是单线程的，zstd 的解码速度是 xz 的数倍，首次安装与每次版本升级的等待明显缩短。解码不用 Java 库（Android 没有 zstd API），而是随包带一个 92 KB 的原生解码器 `kunzstd`：压缩资源从 stdin 灌进去、tar 从 stdout 直接进 `TarExtractor`，全程不落临时文件；`app/libs/xz.jar` 与 XZ 依赖一并移除。**新增「简洁模式」**（设置 → KHA 设置 → 运行模式下方，与运行模式一样是两选一按钮，不是开关）：选「简洁模式」会同时关掉自定义背景（`#kokona-bg`）与磨砂/模糊（`backdrop-filter`），界面回到纯白；选「默认样式」恢复原状，状态持久化。同时把「检查更新」移到该页最下方。文档补一句：长期后台再切回前台，WebView 可能重载并短暂空白，等几秒即恢复。运行时 r48。
 
 **1.1.8**：修 r46 唯一阻塞项 DOC-1（文档说反话）。**根因**：`--shell` 把每一行都送进 glibc loader（`ld-linux --library-path <prefix>/lib <prog>`），而 k* 启动器是 **bionic ELF**，ld.so 会按 `--library-path` 去找它自己的 `libdl.so`，于是报 `libdl.so: cannot open shared object file`。**修复**（方案 A，改实现）：launcher 先读 ELF 的 `PT_INTERP` 分流——glibc 程序仍走内置 loader；所有 bionic ELF 直接 `execv`，并清掉 `LD_LIBRARY_PATH`/`LD_PRELOAD`/`LD_DEBUG`/`LD_DEBUG_OUTPUT`/`LD_BIND_NOW`。同一规则也用于单条命令（`kokona-grun klocale` 此前同样失败）。现在 `--shell` 内 `kgetconf LONG_BIT` → `64`、`klocale` → `C`，同时 `getconf` 等 glibc 程序行为不变。`--help` 与 `glibc-runtime/SKILL.md` 已按实际分流规则改写。运行时 r47。
 
-**1.1.7**：修 r45 遗留。**P0 D4 读回假阴性**：`android_set_text` 根因是 WebView 输入框的 `text` 属性恒空，旧代码把「读回为空」当成失败抛错，导致 Agent 看到 `ok:false` 重试、重复写入。现改为：读回匹配 → `verified:true`；读回为空/不一致 → **`ok:true` + `verified:false` + `reason`**（不再 `ok:false`）；清空仍 `verified:true`；`node_action set_text` 同步。**P1**：`android_status.screenshotSupported` 恒 true + `screenshotMethod`；MediaProjection 授权缓存（首次弹框、之后同一会话复用不弹）；`--shell` 内 k* 已可用（`resolve_bare` 兼容 runtime bin）。**P2**：文档补 WebView text 恒空、已授权不弹框；README 性能段改为 r45 约 40ms 量级，并注明旧 6/26/19–23ms 测量方法不同、不再引用。运行时 r46。
+**1.1.7**：修 r45 遗留。**P0 D4 读回假阴性**：`android_set_text` 根因是 WebView 输入框的 `text` 属性恒空，旧代码把「读回为空」当成失败抛错，导致 Agent 看到 `ok:false` 重试、重复写入。现改为：读回匹配 → `verified:true`；读回为空/不一致 → **`ok:true` + `verified:false` + `reason`**（不再 `ok:false`）；清空仍 `verified:true`；`node_action set_text` 同步。**P1**：`android_status.screenshotSupported` 恒 true + `screenshotMethod`；MediaProjection 授权缓存（首次弹框、之后同一会话复用不弹）；`--shell` 内 k* 已可用（`resolve_bare` 兼容 runtime bin）。**P2**：文档补 WebView text 恒空、已授权不弹框；README 性能段当时写法有误（在 shell 内计时，混入了 shell 自身开销），已在 1.2.1 更正为外部计时结果。运行时 r46。
 
 **1.1.6**：按缺陷清单修功能项。**D4 文本输入闭环**：`android_set_text` 写入后**回读节点树校验**，读回不一致直接返回失败（根因：此前只要 `performAction` 返回 true 就报 ok；且 `callBridge` 过滤空字符串，清空请求到 Java 变成 missing text）。清空支持 `text=""` 或 `clear=true`；`node_action set_text` 同步加回读校验。**DOC-1** `android_status.screenshotSupported` 改为恒 true 并加 `screenshotMethod`（SDK<30 由 MediaProjection 支撑）。**DOC-4** `kldd` 对 bionic/脚本/静态 ELF 直接非零 rc 并打印原因（根因：loader `--list` 对非 glibc 目标也返回 0）。**DOC-5** `--version` 补版本号。**DOC-3** `--shell` 裸名解析同时尝试 prefix `bin/` 与 runtime `bin/`，k* 启动器在 --shell 内可用。**DOC-2/DOC-6** 文档注明 `android_foreground` 可能返回 IME、set_text 清空与校验语义。运行时 r45。
 

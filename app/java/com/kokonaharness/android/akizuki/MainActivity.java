@@ -486,7 +486,7 @@ public class MainActivity extends Activity {
         return currentActivity;
     }
 
-    static final String APP_VERSION = "1.2.0";
+    static final String APP_VERSION = "1.2.1";
 
     private EngineService.Listener engineListener;
 

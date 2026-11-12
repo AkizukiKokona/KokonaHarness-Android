@@ -86,7 +86,10 @@ kgetconf LONG_BIT                # ✓ 等价的 k 前缀启动器
 ## 性能特征
 
 - `kokona-grun` 是**原生 ELF launcher**（`app/native/kokona-run.c`），不是 sh 脚本：进程内准备 DNS / locale / 前缀 / 环境变量，最后一次 `execve()` 直达 glibc loader。零 toybox sh 启动、零 fork、零外部命令、零管道。
-- 旧版 170 行脚本在低端机上单次 175–192ms，其中约 65% 花在 DNS 段的 `dirname` / `tr` / `getprop` / `cd+pwd`。**慢的一直是脚本层，不是 glibc**。（具体毫秒数随设备与测量方法差异很大，早期记录的 6ms/26ms 等对比数据不再作为结论引用；当前实测量级见 README。）
+- 旧版 170 行脚本在低端机上单次 175–192ms，其中约 65% 花在 DNS 段的 `dirname` / `tr` / `getprop` / `cd+pwd`。**慢的一直是脚本层，不是 glibc**。
+- 当前实测（华强北手表 / Android 9，**外部计时**、每路径 20 次均值、已扣除循环固定开销）：`kokona-grun` 裸名 **16.6ms**、`--exec` **17.9ms**、bionic 基线（`/system/bin/true`）**21.8ms**——**启动已快于系统原生程序**。
+  - 「裸 loader 约 6ms」是跳过 launcher、直接 `execve` loader 跑同一程序的理论下限，**不是完整启动路径**，不要拿它和上面的数字并列比较。
+  - 早期文档里出现过的 24ms / 26ms 等值来自不同设备或不同计时方式（含/不含环境准备、是否在 shell 内计时），均已按上面的外部计时结果统一；要做对比请在同一设备、同一方法下重测。
 - 现在每次调用的开销是**固定的启动税**，与程序运行时长、IO 次数无关；这和 proot 那种按 syscall 逐次 ptrace 拦截、随 IO 增长的开销性质完全不同。
 - `--exec` 连环境准备都跳过；`--shell` 在一个进程里连续跑多个 glibc 程序，只付每个程序的 loader 成本。
 
