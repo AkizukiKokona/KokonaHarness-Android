@@ -3,30 +3,38 @@ package com.kokonaharness.android.akizuki;
 import android.content.Context;
 import android.content.res.AssetManager;
 
-import org.tukaani.xz.XZInputStream;
-
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Locale;
 
 /**
- * Installs the bundled tar.xz runtime snapshot into app-private storage by
+ * Installs the bundled tar.zst runtime snapshot into app-private storage by
  * full extraction. No network is involved; everything ships in the APK.
  * Updates always unpack a complete new tree and swap it in, because partial
  * overlays silently kept stale or empty package directories behind.
+ *
+ * The archive is zstd, decoded by the `kunzstd` helper that also ships as an
+ * asset. A native decoder is used instead of a Java library because Android has
+ * no zstd API: the helper is exec'd with the compressed asset on its stdin and
+ * its stdout is fed straight into TarExtractor, so the 700 MB tar is never
+ * written to a temporary file.
  */
 public final class RuntimeInstaller {
+    private static final String ARCHIVE = "runtime.tar.zst";
+    private static final String UNPACKER = "kunzstd";
+
     /** Bump when the bundled runtime changes. */
     // Bump the revision whenever the packaged snapshot changes shape, not only
     // when the upstream dsh version moves. r33 shipped the snapshot with the
     // pre-plugin settings UI inside it, so devices that installed it kept that
     // tree and our later kha-setthings bundle ended up layered on top of the
     // old files. r34 forces the one full re-extract that clears the overlap.
-    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r47";
+    public static final String RUNTIME_VERSION = "dsh-0.2.2-rc.1-r48";
 
     /**
      * The DSH release inside the runtime, without the packaging suffix: the boot
@@ -92,29 +100,8 @@ public final class RuntimeInstaller {
             throw new IOException("无法创建运行时目录");
         }
 
-        AssetManager assets = context.getAssets();
         try {
-            InputStream raw = new BufferedInputStream(
-                    assets.open("runtime.tar.xz", AssetManager.ACCESS_STREAMING), 65536);
-            XZInputStream xz = new XZInputStream(raw);
-            final long[] written = {0};
-            final int[] lastPercent = {-1};
-            final long dataBytes = total;
-            final String message = "正在解压运行时…";
-            TarExtractor.extract(xz, staging, new TarExtractor.Progress() {
-                @Override
-                public void onBytes(long bytes) {
-                    written[0] += bytes;
-                    if (dataBytes <= 0) return;
-                    int percent = (int) Math.min(100, written[0] * 100 / dataBytes);
-                    // Only publish when the integer percent changes: extraction
-                    // reports every 64 KB and would otherwise flood the UI.
-                    if (percent == lastPercent[0]) return;
-                    lastPercent[0] = percent;
-                    progress.onProgress(percent / 100f, message);
-                }
-            });
-            xz.close();
+            extractArchive(context, staging, progress, total);
         } catch (Throwable error) {
             // The previous tree is still in place and still marked installed;
             // the next boot retries the same full install.
@@ -142,6 +129,121 @@ public final class RuntimeInstaller {
         out.write(wanted.getBytes());
         out.close();
         progress.onProgress(-1f, "运行时已就绪");
+    }
+
+    /**
+     * Decode the bundled .tar.zst into {@code staging}.
+     *
+     * One pipe, no temporary file: a feeder thread pushes the compressed asset
+     * into the helper's stdin while this thread parses the tar out of its
+     * stdout. Both the feeder and a stderr drain run on their own threads so a
+     * full pipe can never deadlock the decoder.
+     */
+    private static void extractArchive(final Context context, File staging,
+                                       final Progress progress, long dataBytes)
+            throws IOException {
+        final File unpacker = materializeUnpacker(context);
+        final Process process;
+        try {
+            process = new ProcessBuilder(unpacker.getAbsolutePath()).start();
+        } catch (IOException error) {
+            throw new IOException("无法启动解压器 " + unpacker + "：" + error.getMessage(), error);
+        }
+
+        final StringBuilder errors = new StringBuilder();
+
+        Thread feed = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try (InputStream src = new BufferedInputStream(
+                        context.getAssets().open(ARCHIVE, AssetManager.ACCESS_STREAMING), 1 << 16);
+                     OutputStream dst = process.getOutputStream()) {
+                    byte[] buffer = new byte[1 << 16];
+                    int read;
+                    while ((read = src.read(buffer)) > 0) dst.write(buffer, 0, read);
+                } catch (IOException ignored) {
+                    // A decoder that already failed closes the pipe early; the
+                    // exit status reported below is the useful diagnosis.
+                }
+            }
+        }, "kha-runtime-feed");
+        feed.setDaemon(true);
+        feed.start();
+
+        Thread drain = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                byte[] buffer = new byte[512];
+                try {
+                    int read;
+                    while ((read = process.getErrorStream().read(buffer)) > 0) {
+                        synchronized (errors) {
+                            if (errors.length() < 2000) errors.append(new String(buffer, 0, read));
+                        }
+                    }
+                } catch (IOException ignored) {
+                }
+            }
+        }, "kha-runtime-stderr");
+        drain.setDaemon(true);
+        drain.start();
+
+        final long[] written = {0};
+        final int[] lastPercent = {-1};
+        final long total = dataBytes;
+        try {
+            TarExtractor.extract(new BufferedInputStream(process.getInputStream(), 1 << 16),
+                    staging, new TarExtractor.Progress() {
+                        @Override
+                        public void onBytes(long bytes) {
+                            written[0] += bytes;
+                            if (total <= 0) return;
+                            int percent = (int) Math.min(100, written[0] * 100 / total);
+                            // Only publish when the integer percent changes:
+                            // extraction reports every 64 KB and would otherwise
+                            // flood the UI.
+                            if (percent == lastPercent[0]) return;
+                            lastPercent[0] = percent;
+                            progress.onProgress(percent / 100f, "正在解压运行时…");
+                        }
+                    });
+            int code = process.waitFor();
+            try {
+                feed.join(4000);
+                drain.join(1000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            if (code != 0) {
+                String detail;
+                synchronized (errors) {
+                    detail = errors.toString().trim();
+                }
+                throw new IOException("zstd 解压失败 (rc=" + code + ")"
+                        + (detail.isEmpty() ? "" : "：" + detail));
+            }
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IOException("运行时解压被中断", error);
+        } finally {
+            process.destroy();
+        }
+    }
+
+    /** Copy the bundled decoder out of the APK and make it executable. */
+    private static File materializeUnpacker(Context context) throws IOException {
+        File exe = new File(context.getFilesDir(), UNPACKER);
+        try (InputStream input = context.getAssets().open(UNPACKER);
+             FileOutputStream out = new FileOutputStream(exe)) {
+            byte[] buffer = new byte[1 << 16];
+            int read;
+            while ((read = input.read(buffer)) > 0) out.write(buffer, 0, read);
+            out.getFD().sync();
+        }
+        if (!exe.setExecutable(true, false)) {
+            throw new IOException("无法设置解压器执行权限：" + exe);
+        }
+        return exe;
     }
 
     /**

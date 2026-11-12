@@ -65,7 +65,13 @@ window.__ModuleLoader__.load({
       '.khaSet_termbtn{box-sizing:border-box;width:28px;height:28px;border:1px solid var(--dsw-alias-border-l3,#d8d8de);border-radius:6px;background:transparent;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;cursor:pointer;padding:0}',
       '.khaSet_termbtn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05))}',
       '.khaSet_notes{white-space:pre-wrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#666);max-height:180px;overflow-y:auto;background:rgba(127,127,127,.06);border-radius:8px;padding:8px 10px;margin:8px 0 0}',
-      '.khaSet_kv{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#666);margin:0 0 6px}'
+      '.khaSet_kv{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#666);margin:0 0 6px}',
+      '.khaSet_switchrow{display:flex;align-items:center;gap:12px;margin:2px 0 0}',
+      '.khaSet_switchrow .khaSet_pname{flex:1;min-width:150px}',
+      '.khaSet_switch{box-sizing:border-box;position:relative;flex:none;width:44px;height:26px;border-radius:999px;border:1px solid var(--dsw-alias-border-l3,#d8d8de);background:rgba(127,127,127,.2);cursor:pointer;padding:0;transition:background .15s ease,border-color .15s ease}',
+      '.khaSet_switch_on{background:#7c9cff;border-color:#7c9cff}',
+      '.khaSet_knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .15s ease}',
+      '.khaSet_switch_on .khaSet_knob{transform:translateX(18px)}'
     ].join('')
 
     const CAPS = [
@@ -137,6 +143,35 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', key: 'notif', className: 'khaSet_btn', onClick: () => call('openNotificationAccess') }, '通知使用权'),
           h('button', { type: 'button', key: 'write', className: 'khaSet_btn', onClick: () => call('openWriteSettings') }, '修改系统设置')
         ])
+      )
+    }
+
+    /**
+     * 简介模式：一个开关同时管两件事——自定义背景层与磨砂（backdrop-filter）。
+     * 它们本来就是同一套观感，只关一半会得到"半透明但没有背景"的怪异中间态，
+     * 所以产品上只暴露一个开关，开=全关、关=保持现状。状态由 App 持久化，
+     * 页面只按 data-kha-simple 渲染，切换立即生效、不需要重开设置。
+     */
+    function SimpleModeBlock() {
+      const on = usePoll(() => {
+        const b = bridge()
+        try { return b !== null && typeof b.simpleMode === 'function' ? !!b.simpleMode() : false } catch (error) { return false }
+      }, 1200)
+      return h('div', { className: 'khaSet_block' },
+        h('div', { className: 'khaSet_title' }, '简介模式'),
+        h('div', { className: 'khaSet_desc' }, '开启后同时关闭自定义背景与磨砂（模糊）效果，界面回到纯白；两项只能一起开关，不会只关一半。关闭则恢复现在的外观。'),
+        h('div', { className: 'khaSet_switchrow' },
+          h('div', { className: 'khaSet_pname' },
+            on ? '已开启 · 纯色背景、无模糊' : '已关闭 · 使用自定义背景与模糊',
+            h('div', { className: 'khaSet_pdesc' }, '只影响外观，不改任何功能行为。')),
+          h('button', {
+            type: 'button',
+            role: 'switch',
+            'aria-checked': on ? 'true' : 'false',
+            title: on ? '点击关闭简介模式' : '点击开启简介模式',
+            className: 'khaSet_switch' + (on ? ' khaSet_switch_on' : ''),
+            onClick: () => call('setSimpleMode', !on)
+          }, h('span', { className: 'khaSet_knob' })))
       )
     }
 
@@ -229,9 +264,10 @@ window.__ModuleLoader__.load({
       }, [])
       return h('div', { className: 'khaSet' },
         h(RunModeBlock, { key: 'run' }),
+        h(SimpleModeBlock, { key: 'simple' }),
         h(PermissionsBlock, { key: 'perm' }),
-        h(UpdateBlock, { key: 'update' }),
-        h(AboutBlock, { key: 'about' }))
+        h(AboutBlock, { key: 'about' }),
+        h(UpdateBlock, { key: 'update' }))
     }
 
     function KhaTerminalButton() {

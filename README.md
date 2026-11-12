@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.1.8**（157）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r47**
+> Android 8.1+ · arm64 · 当前 **1.2.0**（158）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r48**
 
 ## 实测性能：手表上的启动开销
 
@@ -85,6 +85,7 @@ DSH 的插件由两半组成：浏览器里的界面（client）和 Node 侧的�
 - 仓库已**公开**，[Release](../../releases/latest) 提供可直接安装的 APK，也可按下面的「构建」章节自行打包。设备要求 Android 8.1（API 27）及以上、**仅 arm64-v8a**。<br>
   <sub><i>注：Android 10 以下内核版本过低，沙箱无法启动，只能使用完全权限运行，其余功能正常。</i></sub>
 - 让 AI 操作手机需要你主动开启无障碍等权限；不授权的话，它就是一个跑在手机里的 DSH，不涉及屏幕操控。
+- **长期放后台再切回前台时，界面可能会重新加载一次**：WebView 被系统回收后恢复，会短暂显示为空白/无内容，这不是崩溃，等几秒它自己刷完就好，期间不要反复切后台或强杀 App。
 - 仓库同时在 [GitHub](https://github.com/AkizukiKokona/KokonaHarness-Android) 与 [Codeberg](https://codeberg.org/AkizukiKokona/KokonaHarness-Android) 托管，代码、标签与发行说明两边同步；**两边都发布同名发行版**（Codeberg 侧用 `tools/publish-codeberg-release.sh` 同步，token 从 git 凭据管理器读取，可重复执行，也可用 `CB_REPO` 指定其它仓库）。Codeberg 有 1.5 GiB 的发行版附件配额，因此 **Codeberg 侧仅最新版本保留安装包附件**：更老版本只保留发行页面与说明，并指向 GitHub 同版本的安装包；**GitHub 侧附件不受影响、始终保留**。若配额临时不足，脚本会自动降级为「完整说明 + GitHub 下载链接 + SHA256」。
 
 ## 开始使用
@@ -208,6 +209,9 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 > Unix 执行位丢失、tar/PAX、`xz`、批量删除保护、CPython 只能 Linux 宿主等）
 > 集中记在 [`WINDOWS-BUILD.md`](WINDOWS-BUILD.md)。
 >
+> **运行时压缩用 zstd**：`build-runtime.sh` / `wsl-repack.sh` 调用 `zstd`（可用 `ZSTD_BIN` 指定路径），
+> 设备端的解码器 `app/assets/kunzstd` 已随仓库提供（93 KB，aarch64），无需自己编译。
+
 > **自己编译要留意的四件事**
 > 1. **签名**：`build.sh` 把 keystore 放在 `$BUILD_DIR/kokona.keystore`，**不存在就现场生成一个**。
 >    想产出能覆盖安装到现有设备上的包，请复用同一个 keystore（换 `BUILD_DIR` 时记得先复制）。
@@ -265,7 +269,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 157 / versionName 1.1.8
+│   ├── AndroidManifest.xml        # versionCode 158 / versionName 1.2.0
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -366,14 +370,16 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.1.8**（versionCode 157）
+- App：**1.2.0**（versionCode 158）
 - DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r47**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r48**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.1.8（本次）**：修 r46 唯一阻塞项 DOC-1（文档说反话）。**根因**：`--shell` 把每一行都送进 glibc loader（`ld-linux --library-path <prefix>/lib <prog>`），而 k* 启动器是 **bionic ELF**，ld.so 会按 `--library-path` 去找它自己的 `libdl.so`，于是报 `libdl.so: cannot open shared object file`。**修复**（方案 A，改实现）：launcher 先读 ELF 的 `PT_INTERP` 分流——glibc 程序仍走内置 loader；所有 bionic ELF 直接 `execv`，并清掉 `LD_LIBRARY_PATH`/`LD_PRELOAD`/`LD_DEBUG`/`LD_DEBUG_OUTPUT`/`LD_BIND_NOW`。同一规则也用于单条命令（`kokona-grun klocale` 此前同样失败）。现在 `--shell` 内 `kgetconf LONG_BIT` → `64`、`klocale` → `C`，同时 `getconf` 等 glibc 程序行为不变。`--help` 与 `glibc-runtime/SKILL.md` 已按实际分流规则改写。运行时 r47。
+**1.2.0（本次）**：**运行时压缩格式 xz → zstd**。启动/升级时那一次解包从 `xz -6` 换成 `zstd -19`：压缩包大几 MB，但设备端解压是单线程的，zstd 的解码速度是 xz 的数倍，首次安装与每次版本升级的等待明显缩短。解码不用 Java 库（Android 没有 zstd API），而是随包带一个 92 KB 的原生解码器 `kunzstd`：压缩资源从 stdin 灌进去、tar 从 stdout 直接进 `TarExtractor`，全程不落临时文件；`app/libs/xz.jar` 与 XZ 依赖一并移除。**新增「简介模式」开关**（设置 → KHA 设置 → 运行模式下方）：一个开关同时关掉自定义背景（`#kokona-bg`）与磨砂/模糊（`backdrop-filter`），界面回到纯白；两项只能一起开关，关闭即恢复原状，状态持久化。同时把「检查更新」移到该页最下方。文档补一句：长期后台再切回前台，WebView 可能重载并短暂空白，等几秒即恢复。运行时 r48。
+
+**1.1.8**：修 r46 唯一阻塞项 DOC-1（文档说反话）。**根因**：`--shell` 把每一行都送进 glibc loader（`ld-linux --library-path <prefix>/lib <prog>`），而 k* 启动器是 **bionic ELF**，ld.so 会按 `--library-path` 去找它自己的 `libdl.so`，于是报 `libdl.so: cannot open shared object file`。**修复**（方案 A，改实现）：launcher 先读 ELF 的 `PT_INTERP` 分流——glibc 程序仍走内置 loader；所有 bionic ELF 直接 `execv`，并清掉 `LD_LIBRARY_PATH`/`LD_PRELOAD`/`LD_DEBUG`/`LD_DEBUG_OUTPUT`/`LD_BIND_NOW`。同一规则也用于单条命令（`kokona-grun klocale` 此前同样失败）。现在 `--shell` 内 `kgetconf LONG_BIT` → `64`、`klocale` → `C`，同时 `getconf` 等 glibc 程序行为不变。`--help` 与 `glibc-runtime/SKILL.md` 已按实际分流规则改写。运行时 r47。
 
 **1.1.7**：修 r45 遗留。**P0 D4 读回假阴性**：`android_set_text` 根因是 WebView 输入框的 `text` 属性恒空，旧代码把「读回为空」当成失败抛错，导致 Agent 看到 `ok:false` 重试、重复写入。现改为：读回匹配 → `verified:true`；读回为空/不一致 → **`ok:true` + `verified:false` + `reason`**（不再 `ok:false`）；清空仍 `verified:true`；`node_action set_text` 同步。**P1**：`android_status.screenshotSupported` 恒 true + `screenshotMethod`；MediaProjection 授权缓存（首次弹框、之后同一会话复用不弹）；`--shell` 内 k* 已可用（`resolve_bare` 兼容 runtime bin）。**P2**：文档补 WebView text 恒空、已授权不弹框；README 性能段改为 r45 约 40ms 量级，并注明旧 6/26/19–23ms 测量方法不同、不再引用。运行时 r46。
 

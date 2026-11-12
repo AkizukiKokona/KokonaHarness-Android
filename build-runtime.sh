@@ -541,9 +541,16 @@ tar --format=pax -cf "$(to_msys "$TAR")" -C "$(to_msys "$RT")" .
 SIZE=$(stat -c %s "$TAR")
 echo "$SIZE" > "$OUT_ASSETS/runtime.size"
 
-rm -f "$OUT_ASSETS/runtime.tar.xz"
-# 默认 2 线程，避免 xz -T0 占满所有核心；游戏结束后可用 KHA_XZ_THREADS=0 全速。
-xz -6 -T"${KHA_XZ_THREADS:-2}" -c "$TAR" > "$OUT_ASSETS/runtime.tar.xz"
+rm -f "$OUT_ASSETS/runtime.tar.zst" "$OUT_ASSETS/runtime.tar.xz"
+# 1.2.0: xz -6 -> zstd -19. The decoder is single-threaded on device, so the
+# level only buys size here; -T0 spreads the (slower) compression over all
+# cores and keeps the build time close to the old xz run. No --long: the
+# decoder window stays ~8 MB instead of demanding a 100 MB+ allocation at
+# extraction time on a low-RAM device.
+ZSTD_BIN="${ZSTD_BIN:-zstd}"
+command -v "$ZSTD_BIN" >/dev/null 2>&1 || {
+  echo "missing zstd CLI ($ZSTD_BIN); set ZSTD_BIN=/path/to/zstd" >&2; exit 1; }
+"$ZSTD_BIN" -19 -T"${KHA_ZSTD_THREADS:-0}" -q -f "$(to_msys "$TAR")" -o "$(to_msys "$OUT_ASSETS/runtime.tar.zst")"
 rm -f "$TAR"
 
-echo "runtime.tar.xz: $(du -h "$OUT_ASSETS/runtime.tar.xz" | cut -f1) (raw $(numfmt --to=iec "$SIZE"))"
+echo "runtime.tar.zst: $(du -h "$OUT_ASSETS/runtime.tar.zst" | cut -f1) (raw $(numfmt --to=iec "$SIZE"))"

@@ -304,7 +304,29 @@ public class MainActivity extends Activity {
             // The upstream "open settings document" action is a desktop Host
             // feature; on Android it only ever produces a red error message.
             // Its CSS-module class is stable, so hide the whole action container.
-            "'.me01iq_action{display:none!important;}';" +
+            "'.me01iq_action{display:none!important;}'+" +
+            // 简介模式（设置里那个开关）：一次性关掉自定义背景与全部磨砂效果。
+            // 两个效果本来就是同一套观感，拆开只会得到"半透明但没有背景"的
+            // 怪异中间态，所以这里始终成对处理：背景层直接不画，抽屉/设置面板
+            // 退回实色，backdrop-filter 全部清零。实色用白/深灰而不是
+            // var(--token)：面板的 ::before 是半透明令牌，必须把 opacity 顶到 1
+            // 才是真正的"纯白"，否则仍然会透出底下的东西。
+            "'html[data-kha-simple=\"1\"] #kokona-bg{display:none!important;}" +
+            "html[data-kha-simple=\"1\"] body{background-image:none!important;}" +
+            "html[data-kha-simple=\"1\"] [data-sidebar-drawer] .pI_x6G_sidebarCol{" +
+            "background:#fff!important;box-shadow:none!important;" +
+            "-webkit-backdrop-filter:none!important;backdrop-filter:none!important;}" +
+            "html[data-kha-simple=\"1\"] body[data-ds-dark-theme] " +
+            "[data-sidebar-drawer] .pI_x6G_sidebarCol{background:#16171c!important;}" +
+            "html[data-kha-simple=\"1\"] [data-sidebar-drawer] .pI_x6G_drawerMask{" +
+            "-webkit-backdrop-filter:none!important;backdrop-filter:none!important;}" +
+            "html[data-kha-simple=\"1\"] [role=\"dialog\"] .VOzbGW_panel," +
+            "html[data-kha-simple=\"1\"] [aria-modal=\"true\"] .VOzbGW_panel{" +
+            "-webkit-backdrop-filter:none!important;backdrop-filter:none!important;}" +
+            "html[data-kha-simple=\"1\"] .VOzbGW_panel::before{opacity:1!important;}" +
+            "html[data-kha-simple=\"1\"] .VOzbGW_panel{background:#fff!important;}" +
+            "html[data-kha-simple=\"1\"] body[data-ds-dark-theme] .VOzbGW_panel{" +
+            "background:#1b1c21!important;}';" +
             // A document that has not produced <head> or <html> yet (the
             // onPageStarted injection) must not throw: the next sync retries,
             // because the id lookup still misses.
@@ -315,6 +337,20 @@ public class MainActivity extends Activity {
             // every sync, which is itself a mutation the sidebar's observer
             // watches.
             "}catch(e){}};window.__KOKONA_APPLY_BRAND__();" +
+            // 简介模式：状态只挂在 <html data-kha-simple>，上面的 CSS 全部由它
+            // 驱动，所以切换不需要重建样式表。localStorage 只是首帧的快速路径
+            // （页面刚加载、bridge 还没被询问时就能先走对），最终以
+            // SharedPreferences 为准——否则清缓存或换设备后开关会漂移。
+            "window.__KOKONA_SIMPLE__=function(on){try{var d=document.documentElement;" +
+            "if(!d)return;if(on)d.setAttribute('data-kha-simple','1');" +
+            "else d.removeAttribute('data-kha-simple');" +
+            "try{localStorage.setItem('kha-simple',on?'1':'0');}catch(e){}}catch(e){}};" +
+            "window.__KOKONA_SIMPLE_APPLY__=function(){try{" +
+            "var v=null;try{v=localStorage.getItem('kha-simple');}catch(e){}" +
+            "if(window.KokonaBridge&&KokonaBridge.simpleMode){" +
+            "try{v=KokonaBridge.simpleMode()?'1':'0';}catch(e){}}" +
+            "window.__KOKONA_SIMPLE__(v==='1');}catch(e){}};" +
+            "window.__KOKONA_SIMPLE_APPLY__();" +
             // Edge swipe: left-to-right opens the drawer from the left third, right-to-left
             // closes it while open. Short, mostly horizontal swipes only.
             "var sx=0,sy=0,st0=0,tr=false,stEl=null;" +
@@ -344,7 +380,7 @@ public class MainActivity extends Activity {
             // cheap to look up, and a page that swaps <head> or remounts the
             // shell used to leave the mark gone until the next launch.
             "window.__KOKONA_SYNC_SB__=function(){observeSb();syncSb();fitDock();" +
-            "window.__KOKONA_APPLY_BRAND__();};" +
+            "window.__KOKONA_APPLY_BRAND__();window.__KOKONA_SIMPLE_APPLY__();};" +
             "window.__KOKONA_SYNC_SB__();setTimeout(window.__KOKONA_SYNC_SB__,600);" +
             // Report the computed values of the two surfaces this shim styles.
             // Without it, "the panel is still opaque" is a symptom that takes a
@@ -450,7 +486,7 @@ public class MainActivity extends Activity {
         return currentActivity;
     }
 
-    static final String APP_VERSION = "1.1.8";
+    static final String APP_VERSION = "1.2.0";
 
     private EngineService.Listener engineListener;
 
@@ -1479,6 +1515,30 @@ public class MainActivity extends Activity {
             getSharedPreferences("kha", MODE_PRIVATE).edit()
                     .putBoolean("web_debug", enabled).apply();
             ToastCompat.show(MainActivity.this, enabled ? "已开启界面调试，重启后生效" : "已关闭界面调试");
+        }
+
+        /**
+         * 简介模式：关掉自定义背景与全部磨砂效果（两者一起，不单独存在）。
+         * 状态存 SharedPreferences，页面只负责按 data-kha-simple 属性渲染。
+         */
+        @JavascriptInterface
+        public boolean simpleMode() {
+            return getSharedPreferences("kha", MODE_PRIVATE)
+                    .getBoolean("simple_mode", false);
+        }
+
+        @JavascriptInterface
+        public void setSimpleMode(final boolean enabled) {
+            getSharedPreferences("kha", MODE_PRIVATE).edit()
+                    .putBoolean("simple_mode", enabled).apply();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (web == null) return;
+                    web.evaluateJavascript(
+                            "window.__KOKONA_SIMPLE__(" + enabled + ");", null);
+                }
+            });
         }
 
         @JavascriptInterface

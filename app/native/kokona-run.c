@@ -47,8 +47,8 @@
 #define NS_MAX 16
 
 /* Reported by --version; bump alongside the app/runtime release. */
-#define KOKONA_RUN_VERSION "1.1.8"
-#define KOKONA_RUNTIME_REV "r47"
+#define KOKONA_RUN_VERSION "1.2.0"
+#define KOKONA_RUNTIME_REV "r48"
 
 /* The prefix is a build-time constant (~100 chars); 1024 leaves every derived
  * path far below PATHBUF so no snprintf can ever truncate. */
