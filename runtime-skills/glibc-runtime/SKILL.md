@@ -70,7 +70,7 @@ kgetconf LONG_BIT                # ✓ 等价的 k 前缀启动器
 
 > `prefix/bin/ldd` 是 shell 脚本，直接经 `kokona-grun` 运行会报 `invalid ELF header`（rc 仍为 0，容易误导）；查动态依赖请用 `kldd`。
 >
-> `kldd` **只适用于 glibc 链接的 ELF**。bionic 程序（interpreter 为 `/system/bin/linker64`）不要用 `kldd`——它的 loader 与 glibc loader 不兼容，`--list` 会失败。先用 `file` 看解释器：`/lib/ld-linux-aarch64.so.1` 才是 glibc 目标。
+> `kldd` **只适用于 glibc 链接的 ELF**。bionic 程序（`/system/bin/linker64`）、shell 脚本与静态 ELF 会**直接返回非零 rc 并打印原因**（不再 rc=0 误导）。先用 `file` 看解释器：`/lib/ld-linux-aarch64.so.1` 才是 glibc 目标。
 
 ## 性能特征
 

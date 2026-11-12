@@ -121,9 +121,10 @@ public final class AndroidCapabilities {
         json.put("sdk", Build.VERSION.SDK_INT);
         json.put("model", Build.MANUFACTURER + " " + Build.MODEL);
         json.put("accessibility", ScreenshotAccessibilityService.isConnected());
-        json.put("screenshotSupported", Build.VERSION.SDK_INT >= 30);
+        json.put("screenshotSupported", true);
+        json.put("screenshotMethod", Build.VERSION.SDK_INT >= 30 ? "accessibility" : "media_projection");
         if (Build.VERSION.SDK_INT < 30) {
-            json.put("screenshotNote", "Android 11 以下不支持无障碍截图，请改用 android_ui");
+            json.put("screenshotNote", "Android 11 以下走 MediaProjection：调用 android_screenshot 会弹出系统授权框，允许后截图；FLAG_SECURE 窗口为黑屏");
         }
         json.put("notificationAccess", NotificationAccessService.isConnected());
         json.put("root", RunMode.isRootGranted(context));
@@ -340,13 +341,16 @@ public final class AndroidCapabilities {
     }
 
     private static String setText(Uri uri) throws Exception {
-        AccessibilityNodeInfo root = ScreenshotAccessibilityService.rootNode();
-        if (root == null) throw new IllegalStateException("无障碍服务未开启");
         String text = uri.getQueryParameter("text");
-        if (text == null) throw new IllegalArgumentException("missing text");
+        // An explicit empty string is a valid clear request; only a missing
+        // parameter is an error. (callBridge used to drop "", so every clear
+        // arrived as null and was rejected with "missing text".)
+        if (text == null) throw new IllegalArgumentException("missing text (empty string clears)");
         Sel sel = new Sel();
         sel.id = emptyToNull(uri.getQueryParameter("id"));
         sel.desc = emptyToNull(uri.getQueryParameter("desc"));
+        AccessibilityNodeInfo root = ScreenshotAccessibilityService.rootNode();
+        if (root == null) throw new IllegalStateException("无障碍服务未开启");
         AccessibilityNodeInfo target = sel.any() ? findFirst(root, sel, 0) : findEditable(root, 0);
         if (target == null) throw new IllegalStateException("当前界面没有可编辑输入框");
         target.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
@@ -355,9 +359,35 @@ public final class AndroidCapabilities {
         if (!target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)) {
             throw new IllegalStateException("系统拒绝写入文字");
         }
+        // ACTION_SET_TEXT returns true even when the app ignores it (wrong node,
+        // custom input), so trust a freshly read tree rather than the return value.
+        String actual = verifyText(sel, text);
         JSONObject json = ok();
         json.put("text", text);
+        json.put("actual", actual);
+        json.put("verified", true);
         return json.toString();
+    }
+
+    /**
+     * Re-read the node tree after a write and confirm the text actually landed.
+     * Throws (so the MCP call fails) instead of reporting ok on faith.
+     */
+    private static String verifyText(Sel sel, String expected) throws InterruptedException {
+        String actual = null;
+        for (int attempt = 0; attempt < 4; attempt++) {
+            AccessibilityNodeInfo root = ScreenshotAccessibilityService.rootNode();
+            AccessibilityNodeInfo node = root == null ? null
+                    : (sel.any() ? findFirst(root, sel, 0) : findEditable(root, 0));
+            if (node != null) {
+                CharSequence got = node.getText();
+                actual = got == null ? "" : got.toString();
+                if (actual.equals(expected)) return actual;
+            }
+            Thread.sleep(60);
+        }
+        throw new IllegalStateException("写入后读回不一致：期望 \"" + expected
+                + "\"，实际 \"" + (actual == null ? "" : actual) + "\"");
     }
 
     private static AccessibilityNodeInfo findEditable(AccessibilityNodeInfo node, int depth) {
@@ -442,12 +472,21 @@ public final class AndroidCapabilities {
                 break;
             case "set_text": {
                 String value = uri.getQueryParameter("value");
-                if (value == null) throw new IllegalArgumentException("missing value");
+                // Empty string is a valid clear; only a missing value is an error.
+                if (value == null) throw new IllegalArgumentException("missing value (empty string clears)");
                 Bundle bundle = new Bundle();
                 bundle.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
                 target.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
                 if (!target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)) {
                     throw new IllegalStateException("系统拒绝写入文字");
+                }
+                // Verify against a refreshed node, not the action's return value.
+                target.refresh();
+                CharSequence got = target.getText();
+                String actual = got == null ? "" : got.toString();
+                if (!actual.equals(value)) {
+                    throw new IllegalStateException("写入后读回不一致：期望 \"" + value
+                            + "\"，实际 \"" + actual + "\"");
                 }
                 break;
             }

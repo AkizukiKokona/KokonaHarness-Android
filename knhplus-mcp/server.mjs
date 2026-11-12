@@ -97,7 +97,9 @@ async function callBridge(path, params = {}, timeoutMs = 20000) {
   const { port, token } = bridgeConfig();
   const url = new URL(`http://127.0.0.1:${port}${path}`);
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") {
+    // Keep an explicit empty string: set_text uses "" to clear an input, and
+    // dropping it here made every clear look like a missing parameter.
+    if (value !== undefined && value !== null) {
       url.searchParams.set(key, String(value));
     }
   }
@@ -170,15 +172,15 @@ const TOOLS = [
   },
   {
     name: "android_set_text",
-    description: "向可编辑输入框写入文字（不需要切换输入法）。默认写当前聚焦框，可用 id/desc 指定目标。",
+    description: "向可编辑输入框写入文字并回读校验（不需要切换输入法）。写入后如读回不一致会返回失败，不再假报 ok。默认写当前聚焦框，可用 id/desc 指定目标。清空：text 传空字符串，或 clear=true。",
     inputSchema: {
       type: "object",
       properties: {
-        text: { type: "string", description: "要写入的文字" },
+        text: { type: "string", description: "要写入的文字；空字符串表示清空" },
+        clear: { type: "boolean", description: "true 时清空输入框（等价 text=\"\"）" },
         id: { type: "string", description: "目标输入框的资源 id（包含匹配）" },
         desc: { type: "string", description: "目标输入框的内容描述" }
       },
-      required: ["text"],
       additionalProperties: false
     }
   },
@@ -377,7 +379,7 @@ const TOOLS = [
   },
   {
     name: "android_foreground",
-    description: "读取当前前台应用（包名、名称、窗口类名、停留时长）。",
+    description: "读取当前前台应用（包名、名称、窗口类名、停留时长）。注意：可能返回输入法（IME）窗口而非应用；要取当前聚焦应用请用 android_windows。",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
   {
@@ -557,7 +559,7 @@ async function runTool(name, args = {}) {
     android_status: { action: "status" },
     android_ui: { action: "ui", limit: args.limit },
     android_click: { action: "click", text: args.text, id: args.id, desc: args.desc, x: args.x, y: args.y, duration: args.duration },
-    android_set_text: { action: "set_text", text: args.text, id: args.id, desc: args.desc },
+    android_set_text: { action: "set_text", text: args.clear ? "" : args.text, id: args.id, desc: args.desc },
     android_scroll: { action: "scroll", direction: args.direction, times: args.times },
     android_global: { action: "global", name: args.name },
     android_gesture: { action: "gesture", kind: args.kind, x: args.x, y: args.y, x2: args.x2, y2: args.y2, duration: args.duration, radius: args.radius, endRadius: args.endRadius, gap: args.gap },

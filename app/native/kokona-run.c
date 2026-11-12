@@ -29,6 +29,8 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
+#include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +45,10 @@
 
 #define PATHBUF 4096
 #define NS_MAX 16
+
+/* Reported by --version; bump alongside the app/runtime release. */
+#define KOKONA_RUN_VERSION "1.1.6"
+#define KOKONA_RUNTIME_REV "r45"
 
 /* The prefix is a build-time constant (~100 chars); 1024 leaves every derived
  * path far below PATHBUF so no snprintf can ever truncate. */
@@ -286,6 +292,69 @@ static void show_help(void) {
     printf("prefix: %s\n", G);
 }
 
+/* Resolve a bare command name: <prefix>/bin/<name> first, then the runtime's
+ * own bin/ (<prefix>/../bin) so the k* launchers (klocale, kgetconf, ...) also
+ * resolve inside --shell. Returns 1 on success. `out` must hold at least
+ * strlen(G) + 8 + strlen(name) + 1 bytes. */
+static int resolve_bare(const char *name, char *out, size_t size) {
+    struct stat st;
+    snprintf(out, size, "%s/bin/%s", G, name);
+    if (stat(out, &st) == 0 && S_ISREG(st.st_mode) && access(out, X_OK) == 0) return 1;
+    snprintf(out, size, "%s/../bin/%s", G, name);
+    if (stat(out, &st) == 0 && S_ISREG(st.st_mode) && access(out, X_OK) == 0) return 1;
+    return 0;
+}
+
+/* Classify a file for kldd: 0 = not an ELF (script/data), 2 = bionic or
+ * non-glibc ELF, 3 = static ELF, 1 = glibc-linked ELF. The loader's --list
+ * exits 0 even when it cannot handle the file, so kldd checks this first and
+ * fails with a non-zero rc instead of a silently "successful" wrong answer. */
+static int elf_kind(const char *path) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return 0;
+    unsigned char eh[64];
+    ssize_t got = read(fd, eh, sizeof eh);
+    if (got < 64 || eh[0] != 0x7f || eh[1] != 'E' || eh[2] != 'L' || eh[3] != 'F') {
+        close(fd);
+        return 0;
+    }
+    if (eh[4] != 2 || eh[5] != 1) {  /* require 64-bit little-endian */
+        close(fd);
+        return 2;
+    }
+    uint16_t machine = (uint16_t)(eh[18] | (eh[19] << 8));
+    if (machine != 183) {  /* not AArch64: treat as foreign/bionic */
+        close(fd);
+        return 2;
+    }
+    uint64_t phoff = 0;
+    uint16_t phentsize = 0, phnum = 0;
+    memcpy(&phoff, eh + 32, 8);
+    memcpy(&phentsize, eh + 54, 2);
+    memcpy(&phnum, eh + 56, 2);
+    int kind = 3;
+    for (uint16_t i = 0; i < phnum; i++) {
+        unsigned char ph[56];
+        if (pread(fd, ph, sizeof ph, (off_t)(phoff + (uint64_t)i * phentsize)) < 56) break;
+        uint32_t type;
+        memcpy(&type, ph, 4);
+        if (type == 3) {  /* PT_INTERP */
+            uint64_t off = 0, filesz = 0;
+            memcpy(&off, ph + 8, 8);
+            memcpy(&filesz, ph + 32, 8);
+            char interp[256];
+            size_t want = (filesz > 0 && filesz < sizeof interp) ? (size_t)filesz : sizeof interp - 1;
+            if (pread(fd, interp, want, (off_t)off) > 0) {
+                interp[want] = '\0';
+                kind = strstr(interp, "ld-linux-aarch64") ? 1 : 2;
+            }
+            break;
+        }
+    }
+    close(fd);
+    return kind;
+}
+
 /* Minimal batch runner: read one command per line from stdin and execute it
  * through the loader. Lines are split on whitespace (no quoting, no pipes,
  * no builtins, no redirection). Blank lines and lines whose first non-blank
@@ -307,10 +376,10 @@ static int shell_loop(void) {
             tokens[n++] = q;
         }
         if (n == 0) continue;
-        /* Resolve a bare command name against the glibc prefix bin/. */
+        /* Resolve a bare command name against prefix bin/, then the runtime's
+         * own bin/, so the k* launchers work here too. */
         if (strchr(tokens[0], '/') == NULL) {
-            snprintf(resolved, sizeof resolved, "%s/bin/%s", G, tokens[0]);
-            tokens[0] = resolved;
+            if (resolve_bare(tokens[0], resolved, sizeof resolved)) tokens[0] = resolved;
         }
         char **nav = build_argv(NULL, n, tokens);
         if (!nav) return 127;
@@ -347,7 +416,8 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc > 1 && (strcmp(argv[1], "-V") == 0 || strcmp(argv[1], "--version") == 0)) {
-        printf("kokona-run (KokonaRuntime) glibc prefix %s\n", G);
+        printf("kokona-run %s (KokonaRuntime %s)\n", KOKONA_RUN_VERSION, KOKONA_RUNTIME_REV);
+        printf("prefix: %s\n", G);
         return 0;
     }
 
@@ -368,12 +438,10 @@ int main(int argc, char **argv) {
      * semantics (no extra ENOENT message). Paths containing '/' are never touched. */
     char *bare = NULL;
     if (!alias && n > 0 && strchr(args[0], '/') == NULL) {
-        size_t need = strlen(G) + 5 + strlen(args[0]) + 1;
+        size_t need = strlen(G) + 16 + strlen(args[0]) + 1;
         bare = malloc(need);
         if (bare) {
-            snprintf(bare, need, "%s/bin/%s", G, args[0]);
-            struct stat st;
-            if (stat(bare, &st) == 0 && S_ISREG(st.st_mode) && access(bare, X_OK) == 0) {
+            if (resolve_bare(args[0], bare, need)) {
                 args[0] = bare;
             } else {
                 free(bare);
@@ -407,6 +475,24 @@ int main(int argc, char **argv) {
     if (!alias && n < 1) {
         fprintf(stderr, "kokona-run: missing program path (try --help)\n");
         return 127;
+    }
+
+    /* kldd: the loader's --list exits 0 even for bionic ELFs and shell scripts,
+     * so classify the target first and fail with a non-zero rc instead of a
+     * silently "successful" wrong answer. */
+    if (alias && alias->list_mode) {
+        if (n < 1) {
+            fprintf(stderr, "kldd: missing program path\n");
+            return 2;
+        }
+        int kind = elf_kind(args[0]);
+        if (kind != 1) {
+            const char *why = kind == 0 ? "not an ELF file (shell script or data)"
+                            : kind == 2 ? "bionic/non-glibc ELF; use file or objdump"
+                                        : "statically linked, no dynamic dependencies";
+            fprintf(stderr, "kldd: %s: %s\n", args[0], why);
+            return 2;
+        }
     }
 
     char **nav = build_argv(alias, n, args);

@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.1.5**（154）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r44**
+> Android 8.1+ · arm64 · 当前 **1.1.6**（155）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r45**
 
 ## 实测性能：在手表上跑赢系统原生程序
 
@@ -266,7 +266,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 154 / versionName 1.1.5
+│   ├── AndroidManifest.xml        # versionCode 155 / versionName 1.1.6
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -367,14 +367,16 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.1.5**（versionCode 154）
+- App：**1.1.6**（versionCode 155）
 - DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r44**
+- KokonaRuntime：**dsh-0.2.2-rc.1-r45**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.1.5（本次）**：按实测缺陷清单修复。**P0-1 git HTTPS**：内置 git 的信任锚硬编码为 Termux 路径、且不认 `SSL_CERT_FILE`；已在引擎与终端环境补 `GIT_SSL_CAINFO=<runtime>/etc/tls/cert.pem`，HTTPS 远端恢复（本地仓库不受影响）。**P0-2 通知使用权**：`android_open_settings` 新增 `notification_listener` 面板直达系统「通知使用权」，错误提示也改为指向该系统页，不再引导到走不通的「环境高级设置」。**P0-3 截图**：修 `android_screenshot` 的 `Body is unusable`（响应体被读两次，改为只读一次）；SDK<30 改走 `MediaProjection`（系统授权弹窗 → VirtualDisplay/ImageReader 抓一帧 → PNG，不落盘），不再只报「不可用」。**文档**：`python-runtime` 移除「curses/readline 已内置」的错误声明；`glibc-runtime` 注明 `kldd` 仅适用 glibc 目标；`android-capabilities` 更新截图/通知说明。运行时 r44（skills 与 knhplus-mcp 更新，升级需重解压一次）。
+**1.1.6（本次）**：按缺陷清单修功能项。**D4 文本输入闭环**：`android_set_text` 写入后**回读节点树校验**，读回不一致直接返回失败（根因：此前只要 `performAction` 返回 true 就报 ok；且 `callBridge` 过滤空字符串，清空请求到 Java 变成 missing text）。清空支持 `text=""` 或 `clear=true`；`node_action set_text` 同步加回读校验。**DOC-1** `android_status.screenshotSupported` 改为恒 true 并加 `screenshotMethod`（SDK<30 由 MediaProjection 支撑）。**DOC-4** `kldd` 对 bionic/脚本/静态 ELF 直接非零 rc 并打印原因（根因：loader `--list` 对非 glibc 目标也返回 0）。**DOC-5** `--version` 补版本号。**DOC-3** `--shell` 裸名解析同时尝试 prefix `bin/` 与 runtime `bin/`，k* 启动器在 --shell 内可用。**DOC-2/DOC-6** 文档注明 `android_foreground` 可能返回 IME、set_text 清空与校验语义。运行时 r45。
+
+**1.1.5**：按实测缺陷清单修复。**P0-1 git HTTPS**：内置 git 的信任锚硬编码为 Termux 路径、且不认 `SSL_CERT_FILE`；已在引擎与终端环境补 `GIT_SSL_CAINFO=<runtime>/etc/tls/cert.pem`，HTTPS 远端恢复（本地仓库不受影响）。**P0-2 通知使用权**：`android_open_settings` 新增 `notification_listener` 面板直达系统「通知使用权」，错误提示也改为指向该系统页，不再引导到走不通的「环境高级设置」。**P0-3 截图**：修 `android_screenshot` 的 `Body is unusable`（响应体被读两次，改为只读一次）；SDK<30 改走 `MediaProjection`（系统授权弹窗 → VirtualDisplay/ImageReader 抓一帧 → PNG，不落盘），不再只报「不可用」。**文档**：`python-runtime` 移除「curses/readline 已内置」的错误声明；`glibc-runtime` 注明 `kldd` 仅适用 glibc 目标；`android-capabilities` 更新截图/通知说明。运行时 r44（skills 与 knhplus-mcp 更新，升级需重解压一次）。
 
 **1.1.4**：修 `kokona-grun` 的裸命令名解析与 `--help` 文案不一致。此前 `kokona-grun getconf LONG_BIT` 把 `getconf` 当相对路径直接交给 loader，报 `cannot open shared object file: getconf`（rc=127）；现 launcher 在 `execve` 前把**不含 `/`** 的参数解析为 `<prefix>/bin/<name>`（先确认存在且可执行；否则保持原样、由 loader 报原语义，不新增 ENOENT 误报），**含 `/`** 的路径原样传递。`--help` 与 `glibc-runtime/SKILL.md` 已同步改写，消除「必须写路径」与「裸名解析」的矛盾；并注明 `prefix/bin/ldd` 是 shell 脚本、查依赖请用 `kldd`。运行时 r43（launcher 与 SKILL.md 均更新，升级需重解压一次）。
 
