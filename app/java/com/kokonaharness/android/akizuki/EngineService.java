@@ -106,6 +106,7 @@ public class EngineService extends Service {
     private static final String KEY_SAFE_MODE_REASON = "safe_mode_reason";
     private static final String KEY_SAFE_MODE_NOTICE = "safe_mode_notice_shown";
     private static final String BACKUP_SUFFIX = ".safemode";
+    private static final String KEY_LAST_RESET_BACKUP = "dsh_last_reset_backup";
     /** Two consecutive failed boots; one is often a transient OOM on a small device. */
     private static final int SAFE_MODE_THRESHOLD = 2;
     /**
@@ -503,13 +504,22 @@ public class EngineService extends Service {
         File aside = new File(dshHome.getParentFile(),
                 ".dsh.reset." + System.currentTimeMillis());
         if (dshHome.renameTo(aside)) {
-            Log.i(TAG, "moved unwritable dsh state to " + aside.getName());
-            // Best effort: a root-owned tree cannot be deleted, and leaving it
-            // costs only disk space.
-            deleteTree(aside);
+            // NEVER delete this backup. It is the user's conversations, themes
+            // and plugin settings. The old code deleted it "best effort", which
+            // turned a recoverable permission problem into permanent data loss.
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putString(KEY_LAST_RESET_BACKUP, aside.getAbsolutePath()).apply();
+            Log.w(TAG, "moved unwritable dsh state to " + aside.getAbsolutePath()
+                    + " (kept as backup, NOT deleted)");
         } else {
             Log.w(TAG, "cannot move unwritable dsh state; continuing anyway");
         }
+    }
+
+    /** Path of the last automatic state backup, for the settings panel. */
+    public static String lastResetBackup(Context context) {
+        return context.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(KEY_LAST_RESET_BACKUP, "");
     }
 
     /** True when a file is absent or the app can write it. */

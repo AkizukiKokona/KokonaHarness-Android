@@ -200,6 +200,13 @@ static void prepare_env(void) {
     char cert[PATHBUF];
     snprintf(cert, sizeof cert, "%s/etc/tls/cert.pem", rt);
     if (file_exists(cert)) setenv("SSL_CERT_FILE", cert, 1);
+    /* libcrypto has Termux's OPENSSLDIR compiled in. Without this, every node
+     * started through the launcher tries to open
+     * /data/data/com.termux/files/usr/etc/tls/openssl.cnf, fails with EACCES
+     * and floods engine.log with OpenSSL configuration errors. */
+    char sslconf[PATHBUF];
+    snprintf(sslconf, sizeof sslconf, "%s/etc/tls/openssl.cnf", rt);
+    if (file_exists(sslconf)) setenv("OPENSSL_CONF", sslconf, 1);
 
     const char *home = getenv("HOME");
     char extra[1024];

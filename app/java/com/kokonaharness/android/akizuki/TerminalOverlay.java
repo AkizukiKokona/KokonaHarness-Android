@@ -1,5 +1,7 @@
 package com.kokonaharness.android.akizuki;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -72,6 +74,30 @@ final class TerminalOverlay {
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         bar.addView(title);
 
+        Button copy = new Button(context);
+        copy.setText("复制");
+        copy.setTextSize(12f);
+        copy.setTextColor(0xfff2f4f8);
+        copy.setBackgroundColor(Color.TRANSPARENT);
+        copy.setPadding(dp(6), 0, dp(6), 0);
+        bar.addView(copy);
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    ClipboardManager clipboard = (ClipboardManager)
+                            context.getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText(
+                                "KHA 终端输出", output.getText()));
+                        ToastCompat.show(context, "已复制终端输出");
+                    }
+                } catch (Throwable error) {
+                    ToastCompat.show(context, "复制失败：" + error.getMessage());
+                }
+            }
+        });
+
         TextView hint = new TextView(context);
         hint.setText("左滑 / 返回键退出");
         hint.setTextColor(0xff9aa4b8);
@@ -96,6 +122,14 @@ final class TerminalOverlay {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         output = new TextView(context);
+        // The log is usually the thing you want to paste into a bug report.
+        // A plain TextView is not selectable, so long-press never offered the
+        // system copy menu; make it focusable as well, otherwise selection
+        // controllers on some ROMs refuse to start.
+        output.setTextIsSelectable(true);
+        output.setFocusable(true);
+        output.setFocusableInTouchMode(true);
+        output.setLongClickable(true);
         output.setTypeface(Typeface.MONOSPACE);
         output.setTextSize(12f);
         output.setTextColor(0xffe8ecf4);

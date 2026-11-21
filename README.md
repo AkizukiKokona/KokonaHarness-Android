@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——十项能力各有独立的「允许 / 询问 / 关闭」，其中悬浮窗可以先让插件把桌宠画到桌面之上。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.2.3**（161）· 内置 DSH **0.2.2-rc.5** / **KokonaRuntime r51**
+> Android 8.1+ · arm64 · 当前 **1.2.4**（162）· 内置 DSH **0.2.2-rc.5** / **KokonaRuntime r52**
 
 ## 实测性能：手表上的启动开销
 
@@ -343,7 +343,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 161 / versionName 1.2.3
+│   ├── AndroidManifest.xml        # versionCode 162 / versionName 1.2.4
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -389,7 +389,9 @@ KokonaHarness-Android/
 <details>
 <summary>展开开发记录</summary>
 
-**1.2.3（本次）**：悬浮窗权限与宿主。**① 权限**：清单加 `SYSTEM_ALERT_WINDOW`；设置页新增「悬浮窗」一栏，状态自动刷新，「去授权」直接跳 `ACTION_MANAGE_OVERLAY_PERMISSION`（带包名）——这是特殊权限，系统没有运行时弹窗，只能这样授予；`android_status` 增加 `canDrawOverlays`，`android_open_settings` 增加 `panel=overlay`。**② 宿主**：`OverlayHost` 用 `TYPE_APPLICATION_OVERLAY` 托一块透明 WebView，`android_overlay op=show` 传 URL 即可显示桌宠页面，支持尺寸/坐标/透明度/拖动/触摸穿透，页面内可调 `KokonaOverlay.moveBy/moveTo/resize/hide`；同一时刻一块窗口，重复 show 即更新，引擎停止时一并关闭。**③ 授权档位**：新增第十项能力 `overlay`（默认 `ask`），悬浮窗能盖住其他应用，值得单独关。运行时 r51（`knhplus-mcp` 在运行时内），升级会重解压一次。
+**1.2.4（本次）**：数据目录误重置修复。此前 `resetDshStateIfUnwritable` 在判定 `.dsh` 树里有文件不可写时，会把整个目录改名搬到 `.dsh.reset.<时间戳>`，然后**顺手删掉这个备份**——用户会话、主题、自定义设置与插件配置一次性丢失，且每次启动都可能重复。现在备份**永久保留**，路径写入偏好并在设置页「关于 KHA」显示，不再自动删除。另外原生 launcher 补上 `OPENSSL_CONF`：此前每个经 launcher 启动的 node 都会去读编译进 libcrypto 的 Termux 路径 `/data/data/com.termux/files/usr/etc/tls/openssl.cnf`，被拒绝后向 engine.log 刷 OpenSSL configuration error，现在指向运行时自带的 `etc/tls/openssl.cnf`。**③ 终端输出**：内置终端的日志区现在支持系统长按选择/复制，标题栏另加「复制」一键复制全部输出。运行时升到 r52，只为把重编的 launcher 打进快照（覆盖安装会重解压一次）。
+
+**1.2.3**：悬浮窗权限与宿主。**① 权限**：清单加 `SYSTEM_ALERT_WINDOW`；设置页新增「悬浮窗」一栏，状态自动刷新，「去授权」直接跳 `ACTION_MANAGE_OVERLAY_PERMISSION`（带包名）——这是特殊权限，系统没有运行时弹窗，只能这样授予；`android_status` 增加 `canDrawOverlays`，`android_open_settings` 增加 `panel=overlay`。**② 宿主**：`OverlayHost` 用 `TYPE_APPLICATION_OVERLAY` 托一块透明 WebView，`android_overlay op=show` 传 URL 即可显示桌宠页面，支持尺寸/坐标/透明度/拖动/触摸穿透，页面内可调 `KokonaOverlay.moveBy/moveTo/resize/hide`；同一时刻一块窗口，重复 show 即更新，引擎停止时一并关闭。**③ 授权档位**：新增第十项能力 `overlay`（默认 `ask`），悬浮窗能盖住其他应用，值得单独关。运行时 r51（`knhplus-mcp` 在运行时内），升级会重解压一次。
 
 **1.2.2**：两件事。**① 安全模式**：连续 2 次启动都没走到「引擎已就绪」，下一次只加载 `@deepseek-ai/dsh-base`、`dsh-web-app`、插件市场和 KHA 设置；原插件列表与两层 `cordis.patch.yml` 先备份成 `*.safemode`，界面顶部黄色横幅可一键退出并恢复（安全模式下卸载的插件不会回来）。**② DSH 0.2.2-rc.5**：CLI 入口换成转发 shim（新增 `./profile-boot` export），启动参数契约不变——`--host` / `--port` / `--no-open` 仍由 web-app 解析，launcher 只认 `--profile` / `--patch` / `--dump-*`。rc.5 新增插件兼容性预检：`engines.dsh` 或 DSH peer 不满足的插件会**被禁用并记一条日志**，其余插件继续启动，不再整体退出；因此安全模式现在只兜「同步回调抛异常」这类无法降级的致命路径。内置插件随版本对齐：`dshmarket` 1.74.0、`dsh-better-sidebar` 0.32.1、`dsh-thinking-slider` 0.4.0——旧版 peer 在 rc.5 下会被预检禁用，等于拿掉唯一的插件控制面。运行时 r50，升级需重解压一次。
 
@@ -448,9 +450,9 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.2.3**（versionCode 161）
+- App：**1.2.4**（versionCode 162）
 - DSH：**0.2.2-rc.5**
-- KokonaRuntime：**dsh-0.2.2-rc.5-r51**
+- KokonaRuntime：**dsh-0.2.2-rc.5-r52**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.zst` 约 209 MiB、解压约 1.14 GiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本

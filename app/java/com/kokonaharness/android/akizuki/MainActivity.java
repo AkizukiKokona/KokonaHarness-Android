@@ -508,7 +508,7 @@ public class MainActivity extends Activity {
         return currentActivity;
     }
 
-    static final String APP_VERSION = "1.2.3";
+    static final String APP_VERSION = "1.2.4";
 
     private EngineService.Listener engineListener;
 
@@ -1906,6 +1906,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String runModeInfo() {
             return RunMode.infoJson(MainActivity.this);
+        }
+
+        /** Where the last automatic dsh-state backup was moved (may be empty). */
+        @JavascriptInterface
+        public String dshBackupInfo() {
+            return EngineService.lastResetBackup(MainActivity.this);
         }
 
         /** JSON snapshot of capability grants for the Settings permissions page. */

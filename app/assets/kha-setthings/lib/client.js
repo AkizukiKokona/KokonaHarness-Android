@@ -281,11 +281,16 @@ window.__ModuleLoader__.load({
         const b = bridge()
         try { return JSON.parse(b.diagnosticsUi() || '{}') } catch (error) { return {} }
       }, 3000)
+      const backup = usePoll(() => {
+        const b = bridge()
+        try { return b !== null && typeof b.dshBackupInfo === 'function' ? String(b.dshBackupInfo() || '') : '' } catch (error) { return '' }
+      }, 3000)
       return h('div', { className: 'khaSet_block' },
         h('div', { className: 'khaSet_title' }, '关于 KHA'),
         h('div', { className: 'khaSet_desc' }, 'KHA ' + text('version', '?') + ' · DSH ' + text('dshVersion', '?')
           + ' · 本页由 kha-setthings 插件提供，不影响官方设置布局。'),
         h('div', { className: 'khaSet_state' }, '工具链直接跑在 Android bionic 上；以 glibc 链接的程序由 kokona-grun 按需接住。终端入口在本页右上角。'),
+        backup ? h('div', { className: 'khaSet_notes' }, '检测到数据目录权限异常，旧数据已自动备份到：' + backup + '（不会再被删除）。会话、主题与插件设置都可能在这里面。') : null,
         h('div', { className: 'khaSet_kv' }, '界面透明度自检：' + (info.sheet
           ? '样式表已注入 · 侧栏 ' + (info.drawerBg || '未渲染') + ' / 模糊 ' + (info.drawerFilter || '无')
             + ' · 设置 ' + (info.panelBg || '未渲染') + ' / ' + (info.panelFilter || '无')
