@@ -15,7 +15,7 @@
 - **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.2.1**（159）· 内置 DSH **0.2.2-rc.1** / **KokonaRuntime r49**
+> Android 8.1+ · arm64 · 当前 **1.2.2**（160）· 内置 DSH **0.2.2-rc.5** / **KokonaRuntime r50**
 
 ## 实测性能：手表上的启动开销
 
@@ -83,11 +83,11 @@
 <p align="center">
   <img src="docs/media/watch-dsh-home.jpg" alt="手表上的 DSH 首页（还没开始对话）" width="240">
   <img src="docs/media/watch-device.jpg" alt="同一台手表的系统信息：HESC M60T / Android 9 / 2.83 GB / Unisoc W527" width="240">
-  <img src="docs/media/watch-terminal.jpg" alt="内置终端里 dsh --version 输出 0.2.2-rc.1" width="240">
+  <img src="docs/media/watch-terminal.jpg" alt="内置终端里 dsh --version 输出（截图时为 0.2.2-rc.1）" width="240">
   <img src="docs/media/watch-settings.jpg" alt="KHA 设置里的运行模式：普通 / 无障碍 / 高级" width="240">
 </p>
 
-<sub>四张都是同一台手表上的原始截图：首页 → 系统信息 → 内置终端（<code>dsh --version</code> → <code>0.2.2-rc.1</code>）→ KHA 设置。首页置顶，其余按录制先后。</sub>
+<sub>四张都是同一台手表上的原始截图：首页 → 系统信息 → 内置终端（<code>dsh --version</code> → <code>0.2.2-rc.1</code>，截图时；现为 rc.5）→ KHA 设置。首页置顶，其余按录制先后。</sub>
 
 **真正手机上的测试还没有**：本轮只有这台极限低端设备的成绩。主流手机（骁龙 / 天玑）上的启动与日常使用测试，将尽可能在本周末完成，并会一并制作完整的介绍视频喵。下面这栏先空着，测完就填：
 
@@ -130,6 +130,17 @@ DSH 的插件由两半组成：浏览器里的界面（client）和 Node 侧的�
 - **依赖原生模块的插件要留意。** 用到 Node 原生扩展（N-API）的插件，需要有 Android arm64 的构建产物。本包已经内置 `node-pty`，所以终端类插件开箱可用；其它原生模块要么等作者提供 arm64 版本，要么用 `kokona-grun` 走 glibc 路线。
 - **已经在手机上跑通的例子**：`dshmarket`（插件市场）、`dsh-better-sidebar`（文件树 / 编辑器 / 任务工作台）、`dsh-thinking-slider`，以及本仓库自带的 `kha-setthings`（KHA 自有设置页与终端入口）。
 
+### 装坏了怎么办：安全模式
+
+插件是第三方代码，装到一个起不来的版本、或者两个插件互相抢同一个服务，都可能让引擎在打印地址之前就退出。DSH 0.2.2-rc.5 本身已经能兜住大部分情况——普通插件导入失败只记一条警告，其余插件照常启动；只有同步回调里抛出的异常会拖死整个进程。
+
+剩下的情况由安全模式接住：
+
+- **触发条件**：连续 **2 次**启动都没能走到「引擎已就绪」。偶发的一次失败（比如小内存设备上被系统杀掉）不会触发。
+- **做了什么**：下一次启动只加载 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、插件市场和 KHA 设置，**你自己装的插件全部不加载**——但一个都不会被卸载或删除。原来的插件列表和两层 `cordis.patch.yml` 会先备份成 `*.safemode` 留在 profile 目录里。
+- **怎么操作**：进入安全模式后，界面顶部有一条黄色横幅。先在插件页把最近安装/刚更新的那个卸载掉，再点横幅 →「退出并重启」。插件列表会按备份恢复（你在安全模式里卸载的不会回来）。
+- **如果安全模式下还是起不来**：问题就不在插件，而是运行时或数据目录，错误页会直接这么写。
+
 ## 几点须知
 
 - 手机上跑的是 **DSH 引擎和工具环境**；真正动脑的模型请求仍发给你自己配置的服务方，需要联网、按你的账户计费。这里没有离线大模型，和其它 DSH 客户端一样。
@@ -159,7 +170,7 @@ DSH 的插件由两半组成：浏览器里的界面（client）和 Node 侧的�
 | 界面 | 复用**官方 DSH Web UI**（WebView）+ 移动端定制 | 自研 **Flutter 原生界面**，可切网页版 |
 | 连回电脑 | 暂未提供 | **SSH / DSH Remote** |
 | 手机操控的授权 | **九项能力**各自 allow / ask / deny，ask 走原生确认闸门 | 三档确认（每次询问 / 本任务 / 始终），敏感操作默认交还用户 |
-| 运行环境形态 | KokonaRuntime 快照压缩约 97 MiB、解压约 583 MiB，整包全量替换 | 首次本机环境建议预留约 1 GB，arm64 APK 约 185 MiB |
+| 运行环境形态 | KokonaRuntime 快照压缩约 209 MiB、解压约 1.14 GiB，整包全量替换 | 首次本机环境建议预留约 2 GB，arm64 APK 约 210 MiB |
 | 获取方式 | 源码发布，自行构建 | Release 提供 arm64 APK 与完整使用文档 |
 
 > 表中体积与占用取自各自公开记录中的构建数据，会随版本变化。
@@ -172,7 +183,7 @@ DSH 的插件由两半组成：浏览器里的界面（client）和 Node 侧的�
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  WebView: DSH Web UI（0.2.2-rc.1 + KokonaHarness 定制）  │
+│  WebView: DSH Web UI（0.2.2-rc.5 + KokonaHarness 定制）  │
 │  设置页 / 会话页 / 侧栏 / 插件市场 / 终端标签            │
 └───────────────┬─────────────────────────────────────────┘
                 │ KokonaBridge (JavaScriptInterface)
@@ -279,7 +290,7 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 | 素材 | 位置 | 说明 |
 |---|---|---|
 | Termux arm64 运行时 | `$BUILD_DIR/termux-debs/ext/` | 约 40 个 `.deb` 解包，提供 node / bash / rg 及依赖库。脚本按**固定版本**引用 `.so`（如 `libicu.so.78.3`、`libz.so.1.3.2`），换快照需同步改脚本 |
-| DSH 的 npm 树 | `$BUILD_DIR/rt/node_modules/` | 安装 `@deepseek-ai/dsh@0.2.2-rc.1` 后打上 `runtime-patches/`、`tools/*.mjs` 的定制补丁；国内可用 npmmirror |
+| DSH 的 npm 树 | `$BUILD_DIR/rt/node_modules/` | 安装 `@deepseek-ai/dsh@0.2.2-rc.5` 后打上 `runtime-patches/`、`tools/*.mjs` 的定制补丁；国内可用 npmmirror |
 | Python 3.15.2 | `$BUILD_DIR/py-build/pyinstall/`（可用 `PY_SRC` 覆盖） | **完整 CPython 发行版**：`bin/python3.15` + `lib/libpython3.15.so` + 整套 `lib/python3.15`。仓库不生成它，需自行交叉编译 |
 
 **Python 这份要特别留意**：CPython 的 Android 交叉编译只支持 **Linux / macOS 宿主**
@@ -296,7 +307,7 @@ NDK 也必须用 **Linux 版**（`prebuilt/linux-x86_64`）——`build-nodepty.
 # 2) 交叉编译 Android PTY（NDK 27.2 + Termux node 头文件）
 ./build-nodepty.sh
 
-# 3) 组装 KokonaRuntime（产出 app/assets/runtime.tar.xz）
+# 3) 组装 KokonaRuntime（产出 app/assets/runtime.tar.zst）
 ./build-runtime.sh
 
 # 4) 打包 APK
@@ -321,7 +332,7 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 159 / versionName 1.2.1
+│   ├── AndroidManifest.xml        # versionCode 160 / versionName 1.2.2
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
@@ -339,7 +350,7 @@ KokonaHarness-Android/
 │   ├── res/                       # 图标、无障碍说明等
 │   ├── libs/                      # Shizuku、xz.jar
 │   └── assets/
-│       ├── runtime.tar.xz         # 构建产物（不入库）
+│       ├── runtime.tar.zst        # 构建产物（不入库）
 │       ├── kha-node-patch.cjs     # Node 26 package.json reader 兜底
 │       ├── official-settings-client.js # 官方设置页原版（启动时覆盖）
 │       ├── kha-setthings/         # 专属设置插件（启动时解压进 runtime）
@@ -366,6 +377,8 @@ KokonaHarness-Android/
 
 <details>
 <summary>展开开发记录</summary>
+
+**1.2.2（本次）**：两件事。**① 安全模式**：连续 2 次启动都没走到「引擎已就绪」，下一次只加载 `@deepseek-ai/dsh-base`、`dsh-web-app`、插件市场和 KHA 设置；原插件列表与两层 `cordis.patch.yml` 先备份成 `*.safemode`，界面顶部黄色横幅可一键退出并恢复（安全模式下卸载的插件不会回来）。**② DSH 0.2.2-rc.5**：CLI 入口换成转发 shim（新增 `./profile-boot` export），启动参数契约不变——`--host` / `--port` / `--no-open` 仍由 web-app 解析，launcher 只认 `--profile` / `--patch` / `--dump-*`。rc.5 新增插件兼容性预检：`engines.dsh` 或 DSH peer 不满足的插件会**被禁用并记一条日志**，其余插件继续启动，不再整体退出；因此安全模式现在只兜「同步回调抛异常」这类无法降级的致命路径。内置插件随版本对齐：`dshmarket` 1.74.0、`dsh-better-sidebar` 0.32.1、`dsh-thinking-slider` 0.4.0——旧版 peer 在 rc.5 下会被预检禁用，等于拿掉唯一的插件控制面。运行时 r50，升级需重解压一次。
 
 **1.1.0**（运行时 r39）把 `kokona-grun` 从 170 行 sh 包装脚本**整个换成原生 ELF launcher** （`app/native/kokona-run.c`）：进程内完成 DNS 校验、locale、前缀与环境准备，最后一次 `execve()` 直达 glibc loader，**没有 toybox sh、没有 fork、没有外部命令**。设备实测旧脚本单次 175–192ms，其中 65% 花在 `dirname`/`tr`/`getprop`/`cd+pwd` 的 fork+exec 上；（当时记录的 6ms/26ms 对比数据测量方法不同，已不再作为结论引用）——瓶颈从来不是 glibc。七个 `k*` 工具改成同一个 ELF 按 `argv[0]` 分派（设备端 tar 会丢链接，所以是实体副本），新增 `--exec`（跳过准备）与 `--shell`（一次准备、连续跑多个程序）。同批修掉：无 locale 数据时 `LANG`/`LC_ALL` 一起强制为 C（消除 `locale` 的三行 `Cannot set LC_*`）、DNS 先比对再写（`resolv.conf` 的 mtime 不再无故变化）、热路径彻底不调 `getprop`、`--version`/`--help` 给友好输出。另把「打开目录」统一按平台分派：Android 走系统文件管理器 （`ACTION_VIEW` + externalstorage 文档 URI），Windows / WSL / macOS 行为一行未动；补上 `KOKONA_ANDROID=1` 供运行时判定平台（Node 在 Android 上也报 `linux`）。版本号 1.1.0 / versionCode 149，正式发行版。
 
@@ -422,14 +435,14 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.2.1**（versionCode 159）
-- DSH：**0.2.2-rc.1**
-- KokonaRuntime：**dsh-0.2.2-rc.1-r49**
+- App：**1.2.2**（versionCode 160）
+- DSH：**0.2.2-rc.5**
+- KokonaRuntime：**dsh-0.2.2-rc.5-r50**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
-- KokonaRuntime 快照 `runtime.tar.xz` 约 97 MiB、解压约 583 MiB（不入库，随 Release 的 APK 分发）
+- KokonaRuntime 快照 `runtime.tar.zst` 约 209 MiB、解压约 1.14 GiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
 
-**1.2.1（本次）**：两件事。**① 更正文档性能数据**：此前 README 与 `glibc-runtime/SKILL.md` 里的性能数字来自在 shell 内对循环计时——shell 自身约 35ms 的启动开销被算进了被测程序，数值整体虚高，属测量方法污染，已全部作废。现按 r46 外部计时（父进程记 `fork`+`exec` 到子进程退出，20 次均值，已扣除 1.9ms/次循环固定开销）重写：**bionic 基线 21.8ms、`--exec` 17.9ms、裸名 16.6ms**，结论是 **`kokona-grun` 启动已快于系统原生 bionic 程序**。「裸 loader 约 6ms」保留但注明是跳过 launcher 的理论下限；24/26ms 等旧值标注为不同设备/计时方式的结果。**② 界面样式补齐**：简洁模式现在一次关掉三样——自定义背景、磨砂（`backdrop-filter`）、以及自定义图标（桌面图标切回 DSH 默认鲸鱼图标，用两个 `<activity-alias>` 互斥启用实现，无需重装）；默认样式下同一栏新增「上传图片」（系统选图，自动缩到长边 1280px、JPEG 84 存入 App 私有目录，经 bridge 以 data URL 注入 `#kokona-bg`）与「恢复默认心夏喵」。运行时 r49（仅为让升级用户拿到更正后的 SKILL.md）。
+**1.2.1**：两件事。**① 更正文档性能数据**：此前 README 与 `glibc-runtime/SKILL.md` 里的性能数字来自在 shell 内对循环计时——shell 自身约 35ms 的启动开销被算进了被测程序，数值整体虚高，属测量方法污染，已全部作废。现按 r46 外部计时（父进程记 `fork`+`exec` 到子进程退出，20 次均值，已扣除 1.9ms/次循环固定开销）重写：**bionic 基线 21.8ms、`--exec` 17.9ms、裸名 16.6ms**，结论是 **`kokona-grun` 启动已快于系统原生 bionic 程序**。「裸 loader 约 6ms」保留但注明是跳过 launcher 的理论下限；24/26ms 等旧值标注为不同设备/计时方式的结果。**② 界面样式补齐**：简洁模式现在一次关掉三样——自定义背景、磨砂（`backdrop-filter`）、以及自定义图标（桌面图标切回 DSH 默认鲸鱼图标，用两个 `<activity-alias>` 互斥启用实现，无需重装）；默认样式下同一栏新增「上传图片」（系统选图，自动缩到长边 1280px、JPEG 84 存入 App 私有目录，经 bridge 以 data URL 注入 `#kokona-bg`）与「恢复默认心夏喵」。运行时 r49（仅为让升级用户拿到更正后的 SKILL.md）。
 
 
 **1.2.0**：**运行时压缩格式 xz → zstd**。启动/升级时那一次解包从 `xz -6` 换成 `zstd -19`：压缩包大几 MB，但设备端解压是单线程的，zstd 的解码速度是 xz 的数倍，首次安装与每次版本升级的等待明显缩短。解码不用 Java 库（Android 没有 zstd API），而是随包带一个 92 KB 的原生解码器 `kunzstd`：压缩资源从 stdin 灌进去、tar 从 stdout 直接进 `TarExtractor`，全程不落临时文件；`app/libs/xz.jar` 与 XZ 依赖一并移除。**新增「简洁模式」**（设置 → KHA 设置 → 运行模式下方，与运行模式一样是两选一按钮，不是开关）：选「简洁模式」会同时关掉自定义背景（`#kokona-bg`）与磨砂/模糊（`backdrop-filter`），界面回到纯白；选「默认样式」恢复原状，状态持久化。同时把「检查更新」移到该页最下方。文档补一句：长期后台再切回前台，WebView 可能重载并短暂空白，等几秒即恢复。运行时 r48。

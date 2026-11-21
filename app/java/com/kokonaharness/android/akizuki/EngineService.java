@@ -80,8 +80,47 @@ public class EngineService extends Service {
     private static final String[] LEGACY_SETTHINGS = {
             "KHA-Setthings", "khakhakha-settings", "kha-settings"
     };
-    private static final Pattern URL_PATTERN =
-            Pattern.compile("http://127\\.0\\.0\\.1:\\d+/?\\?token=[A-Za-z0-9_-]+");
+    /**
+     * Where the engine announces its own URL. Two shapes are accepted because
+     * the launcher owns neither: dsh 0.2.2-rc.5 still prints `dsh web: <url>`
+     * with a process token query, but an older build printed the bare URL and
+     * a future one may spell the token differently. The first pattern anchors
+     * on the printed prefix, so an unrelated URL in a warning cannot make the
+     * engine look ready; the second keeps the exact old form working.
+     */
+    private static final Pattern[] URL_PATTERNS = {
+            Pattern.compile("dsh web:\\s*(https?://127\\.0\\.0\\.1:\\d+\\S*)"),
+            Pattern.compile("(https?://127\\.0\\.0\\.1:\\d+/?\\?token=\\S+)"),
+    };
+
+    // --- safe mode -----------------------------------------------------------
+    // A user-installed plugin can still kill the process in ways dsh's optional
+    // entry policy cannot catch: a synchronous callback that throws is treated
+    // as fatal for the whole app (dsh 0.2.2-rc.5 failure matrix). When that
+    // happens twice in a row the next boot only loads the bundles below, so the
+    // market and the KHA settings panel stay reachable and the user can remove
+    // the offending plugin instead of losing the whole install.
+    private static final String PREFS = "kha";
+    private static final String KEY_FAIL_STREAK = "engine_fail_streak";
+    private static final String KEY_SAFE_MODE = "safe_mode_active";
+    private static final String KEY_SAFE_MODE_REASON = "safe_mode_reason";
+    private static final String KEY_SAFE_MODE_NOTICE = "safe_mode_notice_shown";
+    private static final String BACKUP_SUFFIX = ".safemode";
+    /** Two consecutive failed boots; one is often a transient OOM on a small device. */
+    private static final int SAFE_MODE_THRESHOLD = 2;
+    /**
+     * Minimal set: the two bundles resolved from the dsh installation, the
+     * market (the control surface the user needs), and KHA's own settings
+     * panel. Sidebar/slider and every user bundle stay out.
+     */
+    private static final String[] SAFE_MODE_BUNDLES = {
+            "@deepseek-ai/dsh-base",
+            "@deepseek-ai/dsh-web-app",
+            "dshmarket",
+            SETTHINGS_BUNDLE,
+    };
+    private static final String SAFE_MODE_PATCH =
+            "- id: otel\n  disabled: true\n- id: session-telemetry-otel\n  disabled: true\n";
 
     private static final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private static final Object PUBLISH_LOCK = new Object();
@@ -114,6 +153,102 @@ public class EngineService extends Service {
 
     public static Snapshot current() {
         return latest;
+    }
+
+    /** True while the last boot ran with user-installed bundles filtered out. */
+    public static boolean isSafeMode(Context context) {
+        return context.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean(KEY_SAFE_MODE, false);
+    }
+
+    /** Why safe mode turned itself on, for the banner and the boot report. */
+    public static String safeModeReason(Context context) {
+        return context.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(KEY_SAFE_MODE_REASON, "");
+    }
+
+    /** Whether the one-time safe-mode explanation has already been shown. */
+    public static boolean shouldExplainSafeMode(Context context) {
+        return isSafeMode(context) && !context.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean(KEY_SAFE_MODE_NOTICE, false);
+    }
+
+    public static void markSafeModeExplained(Context context) {
+        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_SAFE_MODE_NOTICE, true).apply();
+    }
+
+    /**
+     * Leave safe mode: restore the bundle list captured on entry, minus any
+     * plugin the user uninstalled while safe mode was active, and put the two
+     * patch layers back. The caller restarts the engine afterwards.
+     */
+    public static boolean exitSafeMode(Context context) {
+        File dshHome = new File(new File(context.getFilesDir(), "home"), ".dsh");
+        File profile = new File(dshHome, "profiles/" + PROFILE_NAME);
+        File manifest = new File(profile, "package.json");
+        File backup = new File(profile, "package.json" + BACKUP_SUFFIX);
+        boolean restored = !backup.isFile();
+        if (backup.isFile() && manifest.isFile()) {
+            try {
+                org.json.JSONObject saved = new org.json.JSONObject(readText(backup));
+                org.json.JSONObject current = new org.json.JSONObject(readText(manifest));
+                org.json.JSONObject deps = current.optJSONObject("dependencies");
+                org.json.JSONArray savedBundles = saved.getJSONObject("dsh")
+                        .getJSONObject("profile").getJSONArray("bundles");
+                org.json.JSONArray keep = new org.json.JSONArray();
+                for (int i = 0; i < savedBundles.length(); i++) {
+                    String name = savedBundles.getString(i);
+                    // Keep the bundle when it ships with the app or is still
+                    // installed. A bundle whose dependency is gone would show up
+                    // as a permanently broken row in the plugin list.
+                    if (isBuiltinBundle(name) || (deps != null && deps.has(name))) {
+                        keep.put(name);
+                    }
+                }
+                org.json.JSONObject dsh = current.optJSONObject("dsh");
+                if (dsh == null) {
+                    dsh = new org.json.JSONObject();
+                    current.put("dsh", dsh);
+                }
+                org.json.JSONObject profileObject = dsh.optJSONObject("profile");
+                if (profileObject == null) {
+                    profileObject = new org.json.JSONObject();
+                    dsh.put("profile", profileObject);
+                }
+                profileObject.put("bundles", keep);
+                writeText(manifest, current.toString(2) + "\n");
+                backup.delete();
+                restored = true;
+            } catch (Exception error) {
+                // Keep the flag and the backup: a half-restored profile would
+                // look like a normal install while still hiding every plugin.
+                Log.w(TAG, "cannot restore the pre-safe-mode bundle list", error);
+            }
+        }
+        if (!restored) return false;
+        restorePatch(new File(profile, "cordis.patch.yml"));
+        restorePatch(new File(dshHome, "cordis.patch.yml"));
+        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_SAFE_MODE, false)
+                .putBoolean(KEY_SAFE_MODE_NOTICE, false)
+                .putString(KEY_SAFE_MODE_REASON, "")
+                .putInt(KEY_FAIL_STREAK, 0)
+                .apply();
+        Log.i(TAG, "safe mode left by user request");
+        return true;
+    }
+
+    /**
+     * Bundles that exist outside the profile's dependency list: the two dsh
+     * bundles resolve from the installation, and kha-setthings is mounted by
+     * link rather than by dependency. Without them the restore would drop the
+     * KHA settings panel every time safe mode is left.
+     */
+    private static boolean isBuiltinBundle(String name) {
+        return "@deepseek-ai/dsh-base".equals(name)
+                || "@deepseek-ai/dsh-web-app".equals(name)
+                || SETTHINGS_BUNDLE.equals(name);
     }
 
     /** Returns the tail of engine.log for the in-app log viewer. */
@@ -241,6 +376,9 @@ public class EngineService extends Service {
             step = "seed-profile";
             seedProfile();
             if (stopping) return;
+            step = "safe-mode";
+            maybeActivateSafeMode();
+            if (stopping) return;
             step = "launch";
             publish(State.STARTING, null, "正在启动引擎…", -1f);
             launchProcess();
@@ -317,9 +455,9 @@ public class EngineService extends Service {
     // would make the next pnpm install abort the whole profile.
     private static final String PROFILE_PACKAGE_JSON =
             "{\n  \"name\": \"dsh-profile-kokona\",\n  \"private\": true,\n"
-            + "  \"dependencies\": { \"dshmarket\": \"1.73.10\","
-            + " \"dsh-thinking-slider\": \"0.3.4\","
-            + " \"dsh-better-sidebar\": \"0.30.1\" },\n"
+            + "  \"dependencies\": { \"dshmarket\": \"1.74.0\","
+            + " \"dsh-thinking-slider\": \"0.4.0\","
+            + " \"dsh-better-sidebar\": \"0.32.1\" },\n"
             + "  \"dsh\": { \"profile\": { \"bundles\": [\"@deepseek-ai/dsh-base\","
             + " \"@deepseek-ai/dsh-web-app\", \"dshmarket\","
             + " \"dsh-thinking-slider\", \"dsh-better-sidebar\", \"kha-setthings\"] } }\n}\n";
@@ -468,6 +606,128 @@ public class EngineService extends Service {
     }
 
     /**
+     * Called after the profile exists and before launch. Two consecutive boots
+     * that never reached READY mean the profile itself (almost always a plugin)
+     * is preventing startup, so the next attempt loads only the safe bundles.
+     * The user's bundle list is backed up first and restored verbatim on exit.
+     */
+    private void maybeActivateSafeMode() {
+        if (isSafeMode(this)) return;
+        int streak = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getInt(KEY_FAIL_STREAK, 0);
+        if (streak < SAFE_MODE_THRESHOLD) return;
+        enterSafeMode("连续 " + streak + " 次启动未完成");
+    }
+
+    private void enterSafeMode(String reason) {
+        File dshHome = new File(new File(getFilesDir(), "home"), ".dsh");
+        File profile = new File(dshHome, "profiles/" + PROFILE_NAME);
+        File manifest = new File(profile, "package.json");
+        if (!manifest.isFile()) return;
+        try {
+            File backup = new File(profile, "package.json" + BACKUP_SUFFIX);
+            if (!backup.isFile()) copyFile(manifest, backup);
+
+            org.json.JSONObject root = new org.json.JSONObject(readText(manifest));
+            org.json.JSONObject dsh = root.optJSONObject("dsh");
+            if (dsh == null) {
+                dsh = new org.json.JSONObject();
+                root.put("dsh", dsh);
+            }
+            org.json.JSONObject profileObject = dsh.optJSONObject("profile");
+            if (profileObject == null) {
+                profileObject = new org.json.JSONObject();
+                dsh.put("profile", profileObject);
+            }
+            org.json.JSONArray bundles = new org.json.JSONArray();
+            for (String name : SAFE_MODE_BUNDLES) bundles.put(name);
+            // dependencies is deliberately left untouched: dshmarket lists the
+            // installed plugins from it, so the user can still uninstall the
+            // broken one while in safe mode.
+            profileObject.put("bundles", bundles);
+            writeText(manifest, root.toString(2) + "\n");
+
+            // A broken patch is a second way to make every boot fail, and it is
+            // invisible in the plugin list. Replace both layers with the seed
+            // and keep the originals next to them.
+            backupPatch(new File(profile, "cordis.patch.yml"));
+            backupPatch(new File(dshHome, "cordis.patch.yml"));
+
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putBoolean(KEY_SAFE_MODE, true)
+                    .putString(KEY_SAFE_MODE_REASON, reason)
+                    .apply();
+            Log.w(TAG, "safe mode active: " + reason);
+        } catch (Exception error) {
+            // Never let the rescue path itself abort a boot: an unmodified
+            // profile still has a chance to start on its own.
+            Log.w(TAG, "cannot enable safe mode", error);
+        }
+    }
+
+    /** Snapshot one patch layer and replace it with the known-good seed. */
+    private void backupPatch(File patch) {
+        try {
+            if (!patch.isFile()) return;
+            File backup = new File(patch.getParentFile(), patch.getName() + BACKUP_SUFFIX);
+            if (!backup.isFile()) copyFile(patch, backup);
+            writeText(patch, SAFE_MODE_PATCH);
+        } catch (Exception error) {
+            Log.w(TAG, "cannot reset " + patch.getName(), error);
+        }
+    }
+
+    private static void restorePatch(File patch) {
+        File backup = new File(patch.getParentFile(), patch.getName() + BACKUP_SUFFIX);
+        if (!backup.isFile()) return;
+        try {
+            copyFile(backup, patch);
+            backup.delete();
+        } catch (Exception error) {
+            Log.w(TAG, "cannot restore " + patch.getName(), error);
+        }
+    }
+
+    private static void copyFile(File from, File to) throws IOException {
+        FileInputStream input = new FileInputStream(from);
+        try {
+            FileOutputStream output = new FileOutputStream(to);
+            try {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) > 0) output.write(buffer, 0, read);
+            } finally {
+                output.close();
+            }
+        } finally {
+            input.close();
+        }
+    }
+
+    /**
+     * A boot that never printed a URL. Only this counts: a process that became
+     * READY and crashed later is a different failure (the UI has the log), and
+     * counting it would silently switch healthy installs into safe mode.
+     */
+    private void recordBootFailure(String detail) {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        int streak = prefs.getInt(KEY_FAIL_STREAK, 0) + 1;
+        prefs.edit().putInt(KEY_FAIL_STREAK, streak).apply();
+        Log.w(TAG, "boot failure #" + streak + ": " + detail);
+        // Arm safe mode right away instead of waiting for another full boot:
+        // the user is looking at the error page, and the retry button should
+        // already boot the filtered profile.
+        if (streak >= SAFE_MODE_THRESHOLD && !isSafeMode(this)) {
+            enterSafeMode("连续 " + streak + " 次启动未完成");
+        }
+    }
+
+    private void recordBootSuccess() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putInt(KEY_FAIL_STREAK, 0).apply();
+    }
+
+    /**
      * Safe mode for the broken settings overlay: when enabled, drop
      * dsh-better-sidebar from the profile so the user can A/B test the
      * interference without ever opening the (unusable) settings page.
@@ -494,7 +754,7 @@ public class EngineService extends Service {
                 deps = new org.json.JSONObject();
                 root.put("dependencies", deps);
             }
-            deps.put(SIDEBAR_BUNDLE, "0.30.1");
+            deps.put(SIDEBAR_BUNDLE, "0.32.1");
             org.json.JSONObject dsh = root.optJSONObject("dsh");
             if (dsh == null) {
                 dsh = new org.json.JSONObject();
@@ -1004,6 +1264,7 @@ public class EngineService extends Service {
     }
 
     private void launchProcess() throws IOException {
+        final boolean startedSafe = isSafeMode(this);
         File runtime = RuntimeInstaller.runtimeDir(this);
         File home = new File(getFilesDir(), "home");
         File workspace = new File(getFilesDir(), "workspace");
@@ -1133,10 +1394,11 @@ public class EngineService extends Service {
                     while (tail.size() > 24) tail.removeFirst();
                 }
                 if (!ready) {
-                    Matcher matcher = URL_PATTERN.matcher(line);
-                    if (matcher.find()) {
+                    String found = matchEngineUrl(line);
+                    if (found != null) {
                         ready = true;
-                        publish(State.READY, matcher.group(), "引擎已就绪", 1f);
+                        recordBootSuccess();
+                        publish(State.READY, found, "引擎已就绪", 1f);
                         Log.i(TAG, "engine url ready");
                     }
                 }
@@ -1164,6 +1426,13 @@ public class EngineService extends Service {
                         report.append('\n').append(entry);
                     }
                 }
+                recordBootFailure("exit=" + exit + ", lines=" + lineCount);
+                if (!startedSafe && isSafeMode(this)) {
+                    report.append("\n\n已切换到安全模式：点「重试」将只加载插件市场、KHA 设置和基础界面，"
+                            + "你可以先在插件页卸载刚装的插件。");
+                } else if (startedSafe) {
+                    report.append("\n\n（安全模式下仍然失败：问题不在插件，可能是运行时或数据目录）");
+                }
                 publish(State.ERROR, null, report.toString(), -1f);
             }
         } catch (Exception error) {
@@ -1182,6 +1451,15 @@ public class EngineService extends Service {
             }
             process = null;
         }
+    }
+
+    /** First URL that looks like this process's own listener, or null. */
+    private static String matchEngineUrl(String line) {
+        for (Pattern pattern : URL_PATTERNS) {
+            Matcher matcher = pattern.matcher(line);
+            if (matcher.find()) return matcher.group(1);
+        }
+        return null;
     }
 
     private static int pidOf(Process value) {

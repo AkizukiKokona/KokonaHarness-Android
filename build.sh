@@ -39,7 +39,7 @@ if ! command -v zip >/dev/null 2>&1; then
 fi
 
 [ -f "$PLATFORM" ] || { echo "missing $PLATFORM" >&2; exit 1; }
-[ -f "$ROOT/app/assets/runtime.tar.xz" ] || { echo "run build-runtime.sh first" >&2; exit 1; }
+[ -f "$ROOT/app/assets/runtime.tar.zst" ] || { echo "run build-runtime.sh first" >&2; exit 1; }
 
 rm -rf "$OUT"
 mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex"
@@ -69,7 +69,7 @@ echo "[2/6] link"
 
 echo "[3/6] javac"
 SHIZUKU="$ROOT/app/libs/shizuku"
-LIBS="$SHIZUKU/api/classes.jar${CP_SEP}$SHIZUKU/aidl/classes.jar${CP_SEP}$SHIZUKU/shared/classes.jar${CP_SEP}$SHIZUKU/provider/classes.jar${CP_SEP}$ROOT/app/libs/xz.jar"
+LIBS="$SHIZUKU/api/classes.jar${CP_SEP}$SHIZUKU/aidl/classes.jar${CP_SEP}$SHIZUKU/shared/classes.jar${CP_SEP}$SHIZUKU/provider/classes.jar"
 find "$ROOT/app/java" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
 # Windows JDK 默认按 GBK 解码源码，而仓库里的中文字符串是 UTF-8，必须显式指定。
 "$JAVA_HOME/bin/javac" --release 8 -nowarn -encoding UTF-8 \
@@ -79,15 +79,15 @@ find "$ROOT/app/java" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
 echo "[4/6] dex"
 (cd "$OUT/classes" && "$JAVA_HOME/bin/jar" cf "$OUT/classes.jar" .)
 "$D8" --release --min-api 28 --lib "$PLATFORM" \
-  --output "$OUT/dex" "$OUT/classes.jar" "$ROOT/app/libs/xz.jar" \
+  --output "$OUT/dex" "$OUT/classes.jar" \
   "$SHIZUKU/api/classes.jar" "$SHIZUKU/aidl/classes.jar" \
   "$SHIZUKU/shared/classes.jar" "$SHIZUKU/provider/classes.jar"
 
 echo "[5/6] package"
 cp "$OUT/base.apk" "$OUT/app.apk"
 (cd "$OUT/dex" && zip -q -X "$OUT/app.apk" classes.dex)
-(cd "$ROOT/app" && zip -q -X "$OUT/app.apk" assets/runtime.size assets/runtime.bytes assets/seed/cordis.patch.yml assets/seed/node-addon-require-builtin-android.js assets/brand.svg assets/kokona-bg.jpg assets/kha-node-patch.cjs assets/official-settings-client.js assets/kha-setthings/package.json assets/kha-setthings/cordis.patch.yml assets/kha-setthings/lib/index.js assets/kha-setthings/lib/client.js)
-(cd "$ROOT/app" && zip -0 -q -X "$OUT/app.apk" assets/runtime.tar.xz)
+(cd "$ROOT/app" && zip -q -X "$OUT/app.apk" assets/runtime.size assets/runtime.bytes assets/seed/cordis.patch.yml assets/seed/node-addon-require-builtin-android.js assets/brand.svg assets/kokona-bg.jpg assets/kha-node-patch.cjs assets/official-settings-client.js assets/kha-setthings/package.json assets/kha-setthings/cordis.patch.yml assets/kha-setthings/lib/index.js assets/kha-setthings/lib/client.js assets/kunzstd)
+(cd "$ROOT/app" && zip -0 -q -X "$OUT/app.apk" assets/runtime.tar.zst)
 
 echo "[6/6] align + sign"
 "$BT/zipalign" -f -p 4 "$OUT/app.apk" "$OUT/aligned.apk"

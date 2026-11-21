@@ -664,7 +664,7 @@ window.__ModuleLoader__.load({
 		function CurrentVersionRow({ t }) {
 			return (0, react_jsx_runtime.jsx)("div", {
 				className: CurrentVersionRow_module_css_default.row,
-				children: t("general.currentVersion", { version: "0.2.2-rc.1" })
+				children: t("general.currentVersion", { version: "0.2.2-rc.5" })
 			});
 		}
 		//#endregion

@@ -26,7 +26,14 @@ for arch in android-arm64 linux-arm64; do
     -o "$PTY_DIR/prebuilds/$arch/pty.node" \
     "$PTY_DIR/src/unix/pty.cc" \
     -static-libstdc++
+  # node-pty 1.2.0 changed the unix launch path: pty.cc now exec()s a separate
+  # `spawn-helper` binary and passes its path as argv[0] of the child. The npm
+  # package only ships that helper for darwin, so Android/Linux builds have to
+  # produce it themselves or every terminal spawn fails with ENOENT.
+  "$CXX" -O2 -o "$PTY_DIR/prebuilds/$arch/spawn-helper" \
+    "$PTY_DIR/src/unix/spawn-helper.cc"
+  chmod 755 "$PTY_DIR/prebuilds/$arch/spawn-helper"
 done
 
 echo "built:"
-ls -l "$PTY_DIR"/prebuilds/*/pty.node
+ls -l "$PTY_DIR"/prebuilds/*/pty.node "$PTY_DIR"/prebuilds/*/spawn-helper

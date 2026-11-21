@@ -11,7 +11,7 @@
 | --- | --- | --- |
 | `build-nodepty.sh`：NDK 交叉编译 node-pty 的 C/C++ | 可以 | Windows 版 NDK 完全能编 arm64 原生代码 |
 | CPython 3.15 的 Android 交叉编译 | 不行 | **限制来自 CPython 构建体系，不是 NDK**：它要先用宿主工具链编一份 build Python 引导，官方 `Android/README.md` 只支持 Linux / macOS 宿主 |
-| `build-runtime.sh`：素材裁剪 + 打包 `runtime.tar.xz` | 可以 | 纯文件操作 |
+| `build-runtime.sh`：素材裁剪 + 打包 `runtime.tar.zst` | 可以 | 纯文件操作 |
 | `build.sh`：aapt2 / javac / d8 / zipalign / apksigner | 可以 | Windows 版 SDK build-tools + JDK 17 |
 | adb 真机 / 模拟器验证 | 可以 | 多设备时记得指定 `-s` |
 
@@ -59,14 +59,11 @@ ROOT="$(to_win "$ROOT")"; SDK="$(to_win "$SDK")"; BUILD="$(to_win "$BUILD")"
 2. **源码编码**：Windows JDK 默认按 GBK 解码，而仓库里的中文字符串是 UTF-8。必须 `javac -encoding UTF-8`，否则中文常量全乱甚至编译失败。构建控制台里输出的中文警告乱码只是控制台代码页，不影响结果。
 3. **源码清单**：`find app/java gen -name '*.java' > sources.txt` 再 `javac @sources.txt`。构建副本里若残留旧包目录（见第 8 节），旧 `.java` 会被一起编进去。
 
-## 4. 打包：tar / xz / zip / 签名
+## 4. 打包：tar / zstd / zip / 签名
 
 - `tar --format=pax`：npm 树里有超长路径，必须用 PAX 扩展头；Java 侧 `TarExtractor` 按 512 字节块对齐解析，只处理 `type '0'` 普通文件与 `type '5'` 目录，`type '2'` 符号链接**跳过**（见第 5 节）。
-- **系统 PATH 里通常没有 `xz`**，用 Git 自带的：
-  ```bash
-  "/c/Program Files/Git/mingw64/bin/xz.exe" -6 -T2 -c runtime.tar > app/assets/runtime.tar.xz
-  ```
-- `zip -q -X` 去掉额外字段；`runtime.tar.xz` 已经压过，用 `zip -0` 存储别再压；`zipalign -f -p 4` 对齐后再 `apksigner sign --v1 --v2`。
+- **压缩由 `build-runtime.sh` 自己完成**（1.2.0 起 xz → zstd -19），产出 `app/assets/runtime.tar.zst`。系统 PATH 里没有 `zstd` 时用 `ZSTD_BIN` 指向绝对路径；`KHA_ZSTD_THREADS=2` 可以限制线程，别把 CPU 吃满。设备端解码器 `app/assets/kunzstd` 是预先编好的 aarch64 二进制，不在构建流程里生成。
+- `zip -q -X` 去掉额外字段；`runtime.tar.zst` 已经压过，用 `zip -0` 存储别再压；`zipalign -f -p 4` 对齐后再 `apksigner sign --v1 --v2`。
 - `apksigner verify` 会打印 JDK 17/21 的 `restricted method / native access` 警告，那是 JVM 提示，不是签名失败；过滤掉看 exit code 即可。
 - **Git Bash 没有 `zip`**（只有 `zipinfo` / `zipgrep`），打包会直接 `zip: command not found`。仓库里的 `tools/zip.py` 实现了构建用到的那点参数（`-q -X`、`-0`），`build.sh` 检测不到 `zip` 时自动用它。要换真 zip 也行，别改脚本逻辑。
 - **`d8` 和 `apksigner` 在 Windows 上只有 `.bat`**。MSYS 只会替 `.exe` 自动补后缀，所以 `"$BT/d8"` 一定 `No such file or directory`。`build.sh` 用 `pick_tool` 探测 `.bat` 版本（`aapt2` / `zipalign` 是 `.exe`，不用管）。
@@ -92,7 +89,7 @@ bin/pnpm[6]: .../@pnpm/exe.android-arm64/pnpm: can't execute: Permission denied
 
 ## 6. 别为改一行 JS 重打 100 MB 包
 
-`runtime.tar.xz` 约 97 MiB、解包后约 583 MiB。为了修一个前端文件或补一个权限位就重打整包、重跑全量解包，既慢又容易出错。项目采用 **Java 层启动时幂等自修复**：
+`runtime.tar.zst` 约 110 MiB、解包后约 583 MiB。为了修一个前端文件或补一个权限位就重打整包、重跑全量解包，既慢又容易出错。项目采用 **Java 层启动时幂等自修复**：
 
 - `ensureRuntimePatch()` — 写 `node-addon-require-builtin` 的 Android JS 回退；
 - `ensureNodePatch()` — 写 `assets/kha-node-patch.cjs`（Node 26 原生 package.json reader 在某些 Android 上非确定性抛 `ERR_INVALID_PACKAGE_CONFIG`，用 `setLoaderOverrides()` 做原生优先、失败时 JS 兜底）；
@@ -114,7 +111,7 @@ done
 
 ## 8. C 盘源码 → D 盘构建副本的同步陷阱
 
-`sync-source.sh` 用 tar 管道同步，排除 `.git`、`.workbuddy` 和大产物（保留 D 盘那份 `runtime.tar.xz`）：
+`sync-source.sh` 用 tar 管道同步，排除 `.git`、`.workbuddy` 和大产物（保留 D 盘那份 `runtime.tar.zst`）：
 
 ```bash
 tar -C "$SRC" --exclude=... -cf - . | tar -C "$DST" -xf -

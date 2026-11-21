@@ -478,6 +478,7 @@ public class MainActivity extends Activity {
     private Button copyButton;
     private Button shareButton;
     private Button renderButton;
+    private TextView safeBanner;
     private WebView authWeb;
     private View authClose;
     private TerminalOverlay terminalOverlay;
@@ -507,7 +508,7 @@ public class MainActivity extends Activity {
         return currentActivity;
     }
 
-    static final String APP_VERSION = "1.2.1";
+    static final String APP_VERSION = "1.2.2";
 
     private EngineService.Listener engineListener;
 
@@ -790,6 +791,30 @@ public class MainActivity extends Activity {
         root.addView(overlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        // Safe-mode strip. It has to sit above both the WebView and the boot
+        // overlay: the whole point is that it is reachable while the user is
+        // repairing the profile, including when the engine is still failing.
+        safeBanner = new TextView(this);
+        safeBanner.setText("安全模式 · 你安装的插件已停用，点此退出");
+        safeBanner.setTextColor(0xff1a1204);
+        safeBanner.setTextSize(13);
+        safeBanner.setGravity(Gravity.CENTER_VERTICAL);
+        safeBanner.setBackgroundColor(0xffe8c06a);
+        int statusBar = 0;
+        int statusBarId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (statusBarId > 0) statusBar = getResources().getDimensionPixelSize(statusBarId);
+        safeBanner.setPadding(dp(16), dp(8) + statusBar, dp(16), dp(8));
+        safeBanner.setVisibility(View.GONE);
+        safeBanner.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                confirmLeaveSafeMode();
+            }
+        });
+        root.addView(safeBanner, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP));
+
         // The terminal sheet is a native overlay on top of the WebView. Its
         // launcher lives in the settings header: the kha-setthings bundle
         // registers it through the official settings.action slot, so no native
@@ -1008,6 +1033,10 @@ public class MainActivity extends Activity {
             }
             case READY:
                 statusText.setText("正在加载界面…");
+                updateSafeBanner();
+                // Explain only once the repaired engine actually came up; on
+                // the error page the failure text is the useful message.
+                if (EngineService.shouldExplainSafeMode(this)) explainSafeModeOnce();
                 if (snapshot.url != null && snapshot.url.equals(activeUrl) && webLoaded) {
                     overlay.setVisibility(View.GONE);
                 } else if (snapshot.url != null) {
@@ -1023,6 +1052,7 @@ public class MainActivity extends Activity {
                 shareButton.setVisibility(View.VISIBLE);
                 renderButton.setVisibility(View.VISIBLE);
                 renderButton.setText(softwareRenderingPreferred() ? "改用硬件渲染" : "改用软件渲染");
+                updateSafeBanner();
                 statusText.setText(snapshot.message != null
                         ? snapshot.message : getString(R.string.engine_error));
                 break;
@@ -1037,6 +1067,52 @@ public class MainActivity extends Activity {
             default:
                 break;
         }
+    }
+
+    /**
+     * The safe-mode strip is the only control that must survive a failed boot,
+     * so it is driven from the shared state instead of the WebView.
+     */
+    private void updateSafeBanner() {
+        if (safeBanner == null) return;
+        boolean safe = EngineService.isSafeMode(this);
+        safeBanner.setVisibility(safe ? View.VISIBLE : View.GONE);
+        if (!safe) return;
+        String reason = EngineService.safeModeReason(this);
+        safeBanner.setText(reason.isEmpty()
+                ? "安全模式 · 你安装的插件已停用，点此退出"
+                : "安全模式（" + reason + "）· 点此退出");
+    }
+
+    /** One explanation per activation; repeating it on every redraw is noise. */
+    private void explainSafeModeOnce() {
+        EngineService.markSafeModeExplained(this);
+        KhaDialog.create(this, "已进入安全模式",
+                "引擎连续两次没能启动，你安装的插件已临时停用，只保留插件市场、KHA 设置和基础界面。"
+                        + "\n\n原来的插件列表已经备份，不会被删除。建议先到设置里的插件页，"
+                        + "卸载最近安装或刚更新的那个，再点顶部黄色条退出安全模式。"
+                        + "\n\n如果安全模式下仍然起不来，问题就不在插件，而是运行时或数据目录。")
+                .extra("知道了", null)
+                .show();
+    }
+
+    private void confirmLeaveSafeMode() {
+        KhaDialog.create(this, "退出安全模式",
+                "会恢复进入安全模式前的插件列表（你在安全模式里卸载的不会回来），然后重启引擎。"
+                        + "\n\n如果坏插件还没处理掉，可能又回到安全模式。")
+                .primary("退出并重启", new Runnable() {
+                    @Override
+                    public void run() {
+                        if (EngineService.exitSafeMode(MainActivity.this)) {
+                            EngineService.restart(MainActivity.this);
+                        } else {
+                            ToastCompat.show(MainActivity.this,
+                                    "无法恢复插件列表，仍停留在安全模式");
+                        }
+                    }
+                })
+                .extra("取消", null)
+                .show();
     }
 
     private void shareStatus() {

@@ -32,6 +32,15 @@ for f in "$NODE_BIN" "$BASH_BIN" "$RG_BIN"; do
 done
 [ -d "$NODE_MODULES/@deepseek-ai/dsh" ] || die "missing dsh install tree"
 
+# Pin the engine version instead of copying whatever happens to be installed.
+# dsh 0.2.2-rc.5 changed the CLI entry to a forwarding shim, promoted the
+# `profile-boot` export, and added a plugin compatibility preflight; a stale
+# rc.1 tree still boots but silently loses those fixes, which is exactly the
+# class of bug that only shows up on a device.
+DSH_VERSION="${DSH_VERSION:-0.2.2-rc.5}"
+DSH_INSTALLED=$(node -p "require('$NODE_MODULES/@deepseek-ai/dsh/package.json').version" 2>/dev/null || true)
+[ "$DSH_INSTALLED" = "$DSH_VERSION" ] || die "dsh tree is '$DSH_INSTALLED', expected $DSH_VERSION (run npm install in $BUILD/rt)"
+
 rm -rf "$RT"
 mkdir -p "$RT/bin" "$RT/lib" "$RT/lib/node_modules" "$OUT_ASSETS"
 
@@ -178,6 +187,15 @@ chmod 0755 "$GIT_CORE"/*
 
 # Node module tree: strip symlinks and non-runtime artefacts.
 cp -a "$NODE_MODULES/." "$RT/lib/node_modules/"
+
+# npm's reify leaves `.package-hash` staging directories behind when a cleanup
+# is refused or a run is interrupted. They hold a stale copy of every package
+# (hundreds of MB after a big upgrade) and would otherwise be packed into the
+# snapshot. Only the scoped and top-level dot dirs are affected; real packages
+# never start with a dot.
+find "$RT/lib/node_modules" -maxdepth 1 -name '.*' -type d -exec rm -rf {} + 2>/dev/null || true
+find "$RT/lib/node_modules/@deepseek-ai" -maxdepth 1 -name '.*' -type d -exec rm -rf {} + 2>/dev/null || true
+
 rm -rf "$RT/lib/node_modules/.bin"
 find "$RT/lib/node_modules" -type l -delete
 
@@ -228,6 +246,12 @@ rm -rf "$RT/lib/node_modules/node-pty/prebuilds/darwin-arm64" \
        "$RT/lib/node_modules/node-pty/prebuilds/win32-arm64" \
        "$RT/lib/node_modules/node-pty/prebuilds/win32-x64"
 
+# rc.5 ships TypeScript sources and a docs tree inside the published package
+# (7.2 MB unpacked versus 130 KB for the rc.1 shell). Node never reads either at
+# runtime; only lib/ and package.json are loaded.
+rm -rf "$RT/lib/node_modules/@deepseek-ai/dsh/src" \
+       "$RT/lib/node_modules/@deepseek-ai/dsh/docs"
+
 # Runtime never executes TypeScript declarations or the duplicated zod
 # sources npm leaves in nested installs.
 find "$RT/lib/node_modules" -type d -path "*/node_modules/zod/src" -prune -exec rm -rf {} +
@@ -251,10 +275,14 @@ fi
 mkdir -p "$RT/lib/node_modules/@pnpm/exe.android-arm64"
 cp -a "$PNPM_DIR/package/." "$RT/lib/node_modules/@pnpm/exe.android-arm64/"
 
-# dshmarket: built-in plugin market. It is a regular dsh bundle; the profile
+# dshmarket: built-in plugin market.
+# 1.74.0 is the first line whose peer range covers dsh 0.2.2 (its dsh-settings
+# peers satisfy 0.2.2-rc.5 under includePrerelease, which app-boot uses).
+# Pinning an older market makes the compatibility preflight disable it, which
+# also removes the only plugin control surface safe mode has. It is a regular dsh bundle; the profile
 # seed selects it, and its two runtime dependencies are vendored so the
 # plugin works offline right after installation.
-MARKET_VERSION="${MARKET_VERSION:-1.73.10}"
+MARKET_VERSION="${MARKET_VERSION:-1.74.0}"
 MARKET_DIR="$BUILD/dshmarket"
 MARKET_INSTALLED=$(node -p "require('$MARKET_DIR/package/package.json').version" 2>/dev/null || true)
 mkdir -p "$MARKET_DIR"
@@ -422,7 +450,7 @@ chmod 0755 "$RG_PKG/bin/rg"
 chmod 0755 "$RT/lib/node_modules/@pnpm/exe.android-arm64/pnpm"
 
 # dsh-thinking-slider: built-in bundle that adds the reasoning-effort slider.
-SLIDER_VERSION="${SLIDER_VERSION:-0.3.4}"
+SLIDER_VERSION="${SLIDER_VERSION:-0.4.0}"
 SLIDER_DIR="$BUILD/thinking-slider"
 SLIDER_INSTALLED=$(node -p "require('$SLIDER_DIR/package/package.json').version" 2>/dev/null || true)
 mkdir -p "$SLIDER_DIR"
@@ -436,7 +464,7 @@ cp -a "$SLIDER_DIR/package/." "$RT/lib/node_modules/dsh-thinking-slider/"
 # dsh-better-sidebar: right-hand workbench (file tree, editor, changes, tasks,
 # side chat) that can also host native right-sidebar tabs. Bundled so the
 # feature is available offline on first boot.
-BSB_VERSION="${BSB_VERSION:-0.30.1}"
+BSB_VERSION="${BSB_VERSION:-0.32.1}"
 BSB_DIR="$BUILD/better-sidebar"
 BSB_INSTALLED=$(node -p "require('$BSB_DIR/package/package.json').version" 2>/dev/null || true)
 mkdir -p "$BSB_DIR"
