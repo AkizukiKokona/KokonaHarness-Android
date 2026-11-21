@@ -22,6 +22,7 @@ public final class AndroidPermissions {
     public static final String MEDIA = "media";
     public static final String CLIPBOARD = "clipboard";
     public static final String FEEDBACK = "feedback";
+    public static final String OVERLAY = "overlay";
 
     public static final String ALLOW = "allow";
     public static final String ASK = "ask";
@@ -31,11 +32,11 @@ public final class AndroidPermissions {
 
     private static final String[] CAPABILITIES = {
             SCREEN, SCREENSHOT, INPUT, SYSTEM, NOTIFICATIONS_READ,
-            NOTIFICATIONS_ACT, MEDIA, CLIPBOARD, FEEDBACK
+            NOTIFICATIONS_ACT, MEDIA, CLIPBOARD, FEEDBACK, OVERLAY
     };
     private static final String[] DEFAULTS = {
             ALLOW, ALLOW, ASK, ASK, ALLOW,
-            ASK, ASK, ASK, ALLOW
+            ASK, ASK, ASK, ALLOW, ASK
     };
 
     private AndroidPermissions() {
@@ -71,6 +72,7 @@ public final class AndroidPermissions {
         if (MEDIA.equals(capability)) return "媒体与音量亮度";
         if (CLIPBOARD.equals(capability)) return "剪贴板";
         if (FEEDBACK.equals(capability)) return "语音与振动";
+        if (OVERLAY.equals(capability)) return "悬浮窗";
         return capability;
     }
 

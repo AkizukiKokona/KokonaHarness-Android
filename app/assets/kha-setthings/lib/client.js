@@ -31,6 +31,10 @@ window.__ModuleLoader__.load({
       const b = bridge()
       try { return b === null ? null : JSON.parse(b.androidPermissions() || 'null') } catch (error) { return null }
     }
+    const overlayInfo = () => {
+      const b = bridge()
+      try { return b === null ? null : JSON.parse(b.overlayInfo() || '{}') } catch (error) { return null }
+    }
     const updateInfo = () => {
       const b = bridge()
       try { return b === null ? null : JSON.parse(b.updateInfo() || '{}') } catch (error) { return null }
@@ -77,7 +81,8 @@ window.__ModuleLoader__.load({
       { id: 'notifications_act', label: '通知操作', desc: '回复、忽略或点击通知按钮' },
       { id: 'media', label: '媒体与音量亮度', desc: '播放控制、音量与亮度' },
       { id: 'clipboard', label: '剪贴板', desc: '读取或写入剪贴板' },
-      { id: 'feedback', label: '语音与振动', desc: 'TTS 朗读、振动与 Toast' }
+      { id: 'feedback', label: '语音与振动', desc: 'TTS 朗读、振动与 Toast' },
+      { id: 'overlay', label: '悬浮窗', desc: '在其他应用上层显示窗口（桌宠、HUD）' }
     ]
     const PERM_MODES = [['allow', '允许'], ['ask', '询问'], ['deny', '禁止']]
     const RUN_MODES = [
@@ -137,6 +142,37 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', key: 'notif', className: 'khaSet_btn', onClick: () => call('openNotificationAccess') }, '通知使用权'),
           h('button', { type: 'button', key: 'write', className: 'khaSet_btn', onClick: () => call('openWriteSettings') }, '修改系统设置')
         ])
+      )
+    }
+
+    /**
+     * 悬浮窗：SYSTEM_ALERT_WINDOW 没有运行时弹窗，requestPermissions() 也拿不到，
+     * 唯一入口是系统「显示在其他应用上层」。所以这里只做三件事：报告状态、
+     * 跳系统页、关掉正在显示的窗口——不假装自己能直接授权。
+     */
+    function OverlayBlock() {
+      const data = usePoll(overlayInfo, 1500)
+      if (data === null) return null
+      const granted = !!data.granted
+      const visible = !!data.visible
+      return h('div', { className: 'khaSet_block' },
+        h('div', { className: 'khaSet_title' }, '悬浮窗'),
+        h('div', { className: 'khaSet_desc' }, '桌宠、HUD 这类插件要把画面画在其他应用上面，需要系统的「显示在其他应用上层」。它不是普通权限，系统不会弹授权框，只能跳到设置页手动开启；开启后这里会自动变成已授权。'),
+        h('div', { style: { marginTop: '8px' } }, [
+          badge(granted ? '悬浮窗已授权' : '悬浮窗未授权', 'state'),
+          visible ? badge('有窗口正在显示', 'win') : null
+        ]),
+        h('div', { className: 'khaSet_row', style: { marginTop: '10px' } }, [
+          h('button', {
+            type: 'button', key: 'go', className: 'khaSet_btn',
+            onClick: () => call('requestOverlay')
+          }, granted ? '重新授权' : '去授权'),
+          visible ? h('button', {
+            type: 'button', key: 'hide', className: 'khaSet_btn',
+            onClick: () => call('overlayHide')
+          }, '关闭悬浮窗') : null
+        ]),
+        granted ? null : h('div', { className: 'khaSet_state' }, '提示：部分 ROM 把这一项放在「应用信息 → 特殊权限」下，跳转不到时按此路径手动开启。')
       )
     }
 
@@ -271,6 +307,7 @@ window.__ModuleLoader__.load({
       }, [])
       return h('div', { className: 'khaSet' },
         h(RunModeBlock, { key: 'run' }),
+        h(OverlayBlock, { key: 'overlay' }),
         h(SimpleModeBlock, { key: 'simple' }),
         h(PermissionsBlock, { key: 'perm' }),
         h(AboutBlock, { key: 'about' }),

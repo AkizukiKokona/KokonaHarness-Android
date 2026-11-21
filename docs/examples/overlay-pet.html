@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>KHA 悬浮窗示例</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+  #pet {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    cursor: grab;
+  }
+  #pet:active { cursor: grabbing; }
+
+  .body {
+    width: 72%;
+    aspect-ratio: 1 / 1;
+    border-radius: 50% 50% 44% 44%;
+    background: radial-gradient(circle at 34% 28%, #fff8f2 0%, #ffd9e4 42%, #f39ab8 100%);
+    box-shadow: 0 6px 18px rgba(190, 90, 130, .35), inset 0 -6px 14px rgba(200, 90, 130, .25);
+    position: relative;
+    animation: breathe 3.4s ease-in-out infinite;
+  }
+  .eye {
+    position: absolute;
+    top: 38%;
+    width: 11%;
+    height: 15%;
+    border-radius: 50%;
+    background: #3a2b33;
+    animation: blink 4.6s infinite;
+  }
+  .eye.l { left: 27%; }
+  .eye.r { right: 27%; }
+  .mouth {
+    position: absolute;
+    left: 50%;
+    top: 58%;
+    width: 16%;
+    height: 8%;
+    margin-left: -8%;
+    border-bottom: 2px solid #b4566f;
+    border-radius: 0 0 40% 40%;
+  }
+  .blush {
+    position: absolute;
+    top: 52%;
+    width: 13%;
+    height: 7%;
+    border-radius: 50%;
+    background: rgba(255, 120, 150, .35);
+    filter: blur(1px);
+  }
+  .blush.l { left: 16%; }
+  .blush.r { right: 16%; }
+
+  @keyframes breathe {
+    0%, 100% { transform: scale(1) translateY(0); }
+    50% { transform: scale(1.035) translateY(-2%); }
+  }
+  @keyframes blink {
+    0%, 92%, 100% { transform: scaleY(1); }
+    95% { transform: scaleY(.12); }
+  }
+
+  #hint {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 2%;
+    text-align: center;
+    font: 10px/1.4 system-ui, sans-serif;
+    color: rgba(90, 60, 70, .55);
+    pointer-events: none;
+    transition: opacity .6s;
+  }
+</style>
+</head>
+<body>
+  <div id="pet">
+    <div class="body">
+      <span class="eye l"></span>
+      <span class="eye r"></span>
+      <span class="blush l"></span>
+      <span class="blush r"></span>
+      <span class="mouth"></span>
+    </div>
+  </div>
+  <div id="hint">按住拖动</div>
+
+<script>
+  // 这是给 android_overlay 用的最小页面：一个透明背景的小宠物，
+  // 拖动时把位移交给原生窗口，页面本身不跟着动，避免双份位移。
+  const pet = document.getElementById('pet');
+  const hint = document.getElementById('hint');
+  const overlay = window.KokonaOverlay || null;
+  let dragging = false;
+
+  setTimeout(() => { hint.style.opacity = '0'; }, 2600);
+
+  if (overlay === null) {
+    // 直接在浏览器里打开时没有原生接口，退化成页面内拖动，方便调样式。
+    hint.textContent = '未在 KHA 悬浮窗中运行';
+    hint.style.opacity = '1';
+    let sx = 0, sy = 0;
+    pet.addEventListener('pointerdown', (e) => { dragging = true; sx = e.clientX; sy = e.clientY; });
+    pet.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      pet.style.transform = `translate(${e.clientX - sx}px, ${e.clientY - sy}px)`;
+    });
+    pet.addEventListener('pointerup', () => { dragging = false; });
+  } else {
+    pet.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      pet.setPointerCapture(e.pointerId);
+      hint.style.opacity = '0';
+    });
+    pet.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = Math.round(e.movementX);
+      const dy = Math.round(e.movementY);
+      if (dx !== 0 || dy !== 0) overlay.moveBy(dx, dy);
+    });
+    const stop = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      try { pet.releasePointerCapture(e.pointerId); } catch (error) {}
+    };
+    pet.addEventListener('pointerup', stop);
+    pet.addEventListener('pointercancel', stop);
+    // 双击把自己关掉，免得测试完留一个窗口在桌面上。
+    pet.addEventListener('dblclick', () => overlay.hide());
+  }
+</script>
+</body>
+</html>

@@ -508,7 +508,7 @@ public class MainActivity extends Activity {
         return currentActivity;
     }
 
-    static final String APP_VERSION = "1.2.2";
+    static final String APP_VERSION = "1.2.3";
 
     private EngineService.Listener engineListener;
 
@@ -2076,6 +2076,47 @@ public class MainActivity extends Activity {
                     AndroidCapabilities.openWriteSettings(MainActivity.this);
                 }
             });
+        }
+
+        /** Overlay grant + window state, polled by the Settings permission row. */
+        @JavascriptInterface
+        public String overlayInfo() {
+            return OverlayHost.statusJson(MainActivity.this).toString();
+        }
+
+        /**
+         * SYSTEM_ALERT_WINDOW cannot be requested with requestPermissions():
+         * the only grant path is the system "display over other apps" screen.
+         */
+        @JavascriptInterface
+        public void requestOverlay() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    AndroidCapabilities.openOverlaySettings(MainActivity.this);
+                }
+            });
+        }
+
+        /**
+         * Hosts a plugin page (desktop pet, HUD) in the system overlay window.
+         * Takes the same JSON options as the bridge call:
+         * {url, widthDp, heightDp, x, y, alpha, draggable, touchable, reload}.
+         */
+        @JavascriptInterface
+        public String overlayShow(final String optionsJson) {
+            final org.json.JSONObject options;
+            try {
+                options = new org.json.JSONObject(optionsJson == null ? "{}" : optionsJson);
+            } catch (Exception error) {
+                return "{\"ok\":false,\"error\":\"options 不是合法 JSON\"}";
+            }
+            return OverlayHost.show(MainActivity.this, options).toString();
+        }
+
+        @JavascriptInterface
+        public String overlayHide() {
+            return OverlayHost.hide(MainActivity.this).toString();
         }
 
         /** Saves a browser blob (exported file, image, log) through the system document picker. */

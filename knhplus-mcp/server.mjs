@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const SERVER_NAME = "knhplus";
-const SERVER_VERSION = "1.0.37";
+const SERVER_VERSION = "1.0.38";
 const runDir = process.env.KOKONA_APP_RUN || "";
 const log = (...args) => console.error("[knhplus]", ...args);
 
@@ -32,7 +32,8 @@ const DEFAULT_PERMISSIONS = Object.freeze({
   notifications_act: "ask",
   media: "ask",
   clipboard: "ask",
-  feedback: "allow"
+  feedback: "allow",
+  overlay: "ask"
 });
 
 const CAPABILITY_FOR_TOOL = {
@@ -66,7 +67,8 @@ const CAPABILITY_FOR_TOOL = {
   android_toast: "feedback",
   android_vibrate: "feedback",
   android_speak: "feedback",
-  android_tts_stop: "feedback"
+  android_tts_stop: "feedback",
+  android_overlay: "overlay"
 };
 
 const CAPABILITY_LABEL = {
@@ -78,7 +80,8 @@ const CAPABILITY_LABEL = {
   notifications_act: "通知操作",
   media: "媒体与音量亮度",
   clipboard: "剪贴板",
-  feedback: "语音与振动"
+  feedback: "语音与振动",
+  overlay: "悬浮窗"
 };
 
 async function fetchPermissions() {
@@ -434,6 +437,26 @@ const TOOLS = [
     }
   },
   {
+    name: "android_overlay",
+    description: "系统悬浮窗：op=status 查询权限与窗口状态；op=request 拉起「显示在其他应用上层」系统设置页（悬浮窗是特殊权限，没有运行时弹窗，只能这样授予）；op=show 在桌面之上显示一个透明 WebView（桌宠/HUD），url 支持 http(s)、file:// 与 data:text/html；op=hide 关闭。窗口只有一块，重复 show 即更新。页面内可用 window.KokonaOverlay.moveBy(dx,dy)/moveTo(x,y)/resize(w,h)/hide() 自行控制。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        op: { type: "string", enum: ["status", "request", "show", "hide"], description: "默认 status" },
+        url: { type: "string", description: "op=show 要加载的页面；本地页面优先用 file:/// 绝对路径" },
+        widthDp: { type: "integer", description: "窗口宽（dp），默认 160" },
+        heightDp: { type: "integer", description: "窗口高（dp），默认 160" },
+        x: { type: "integer", description: "左上角横坐标（px），默认贴右侧" },
+        y: { type: "integer", description: "左上角纵坐标（px），默认屏幕 35% 处" },
+        alpha: { type: "number", description: "不透明度 0.1–1.0，默认 1.0" },
+        draggable: { type: "boolean", description: "true 时整块窗口可拖动（页面将收不到触摸），默认 false" },
+        touchable: { type: "boolean", description: "false 时触摸穿透到下层应用，默认 true" },
+        reload: { type: "boolean", description: "true 时即使 url 未变也重新加载" }
+      },
+      additionalProperties: false
+    }
+  },
+  {
     name: "android_open_settings",
     description: "直接打开系统设置面板：wifi、bluetooth、battery、display、sound、storage、accessibility、notification（=通知使用权）、notification_listener、usage、app、write_settings 等。",
     inputSchema: {
@@ -441,7 +464,7 @@ const TOOLS = [
       properties: {
         panel: {
           type: "string",
-          enum: ["settings", "wifi", "bluetooth", "data", "airplane", "battery", "display", "sound", "storage", "accessibility", "notification", "notification_listener", "usage", "default_apps", "location", "security", "locale", "input_method", "home", "nfc", "date", "developer", "vpn", "device", "write_settings", "app"]
+          enum: ["settings", "wifi", "bluetooth", "data", "airplane", "battery", "display", "sound", "storage", "accessibility", "notification", "notification_listener", "usage", "default_apps", "location", "security", "locale", "input_method", "home", "nfc", "date", "developer", "vpn", "device", "write_settings", "overlay", "app"]
         },
         package: { type: "string", description: "panel=app 时目标应用包名" }
       },
@@ -466,7 +489,7 @@ const TOOLS = [
   },
   {
     name: "android_policy",
-    description: "查看当前手机能力授权：screen/screenshot/input/system/notifications_read/notifications_act/media/clipboard/feedback，每项为 allow（直接执行）、ask（每次确认）、deny（禁止）。授权由用户在 App 设置 → 手机权限 中调整，模型不能修改。",
+    description: "查看当前手机能力授权：screen/screenshot/input/system/notifications_read/notifications_act/media/clipboard/feedback/overlay，每项为 allow（直接执行）、ask（每次确认）、deny（禁止）。授权由用户在 App 设置 → 手机权限 中调整，模型不能修改。",
     inputSchema: {
       type: "object",
       properties: {
@@ -520,8 +543,24 @@ async function confirmOperation(name, args, capability) {
  * grant that the app verifies again on the actual request, so a denied or
  * stale state cannot be reused.
  */
+/**
+ * android_overlay is three tools in one: status reads, request opens a system
+ * page, show/hide actually draws over other apps. Charging the overlay grant
+ * for a status poll would pop a confirmation every time, so the capability is
+ * resolved per op and mirrored by the app's own action->capability table.
+ */
+function capabilityFor(name, args) {
+  if (name === "android_overlay") {
+    const op = args && args.op ? String(args.op) : "status";
+    if (op === "status") return "screen";
+    if (op === "request") return "system";
+    return "overlay";
+  }
+  return CAPABILITY_FOR_TOOL[name];
+}
+
 async function authorize(name, args) {
-  const capability = CAPABILITY_FOR_TOOL[name];
+  const capability = capabilityFor(name, args);
   if (!capability) throw new Error(`工具没有声明能力：${name}`);
   const permissions = await fetchPermissions();
   const mode = permissions[capability] || "ask";
@@ -585,7 +624,8 @@ async function runTool(name, args = {}) {
     android_toast: { action: "toast", text: args.text },
     android_apps: { action: "apps", q: args.q },
     android_clipboard: { action: "clipboard", set: args.set },
-    android_vibrate: { action: "vibrate", ms: args.ms, pattern: args.pattern }
+    android_vibrate: { action: "vibrate", ms: args.ms, pattern: args.pattern },
+    android_overlay: { action: "overlay", op: args.op, url: args.url, widthDp: args.widthDp, heightDp: args.heightDp, x: args.x, y: args.y, alpha: args.alpha, draggable: args.draggable, touchable: args.touchable, reload: args.reload }
   };
   const params = map[name];
   if (!params) throw new Error(`未知工具：${name}`);

@@ -159,7 +159,7 @@ public final class LocalBridgeServer {
      * different from this table is refused, so a compromised Node process cannot
      * relabel a state-changing action as a read-only one.
      */
-    private static String requiredCapability(String action) {
+    private static String requiredCapability(String action, String op) {
         if (action == null) return null;
         switch (action) {
             case "status":
@@ -200,6 +200,15 @@ public final class LocalBridgeServer {
             case "speak":
             case "tts_stop":
                 return AndroidPermissions.FEEDBACK;
+            case "overlay":
+                // status only reads state and request only opens a system
+                // screen; show/hide is the part that puts pixels over other
+                // apps, so only that one needs the overlay grant.
+                if (op == null || op.isEmpty() || "status".equals(op)) {
+                    return AndroidPermissions.SCREEN;
+                }
+                if ("request".equals(op)) return AndroidPermissions.SYSTEM;
+                return AndroidPermissions.OVERLAY;
             default:
                 return null;
         }
@@ -339,7 +348,8 @@ public final class LocalBridgeServer {
                 return;
             }
             if ("/plus".equals(path)) {
-                String required = requiredCapability(uri.getQueryParameter("action"));
+                String required = requiredCapability(uri.getQueryParameter("action"),
+                        uri.getQueryParameter("op"));
                 String declared = uri.getQueryParameter("capability");
                 if (required == null || declared == null || !declared.equals(required)) {
                     deny(socket, "能力声明不匹配或未知操作");

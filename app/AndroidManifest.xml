@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kokonaharness.android.akizuki"
-    android:versionCode="160"
-    android:versionName="1.2.2">
+    android:versionCode="161"
+    android:versionName="1.2.3">
 
     <uses-sdk android:minSdkVersion="27" android:targetSdkVersion="28" />
 
@@ -17,6 +17,8 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 悬浮窗：显示在其他应用上层（桌宠等）。特殊权限，无运行时弹窗，只能跳系统设置页授予。 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
     <queries>

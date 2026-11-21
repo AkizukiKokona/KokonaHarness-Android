@@ -106,6 +106,7 @@ public final class AndroidCapabilities {
             case "apps": return apps(context, uri);
             case "clipboard": return clipboard(context, uri);
             case "vibrate": return vibrate(context, uri);
+            case "overlay": return overlay(context, uri);
             default: throw new IllegalArgumentException("未知操作：" + action);
         }
     }
@@ -155,6 +156,7 @@ public final class AndroidCapabilities {
         } catch (Throwable ignored) {
         }
         json.put("canWriteSettings", Settings.System.canWrite(context));
+        json.put("canDrawOverlays", OverlayHost.granted(context));
         return json.toString();
     }
 
@@ -945,6 +947,10 @@ public final class AndroidCapabilities {
                 intent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
                         Uri.parse("package:" + context.getPackageName()));
                 break;
+            case "overlay":
+                intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + context.getPackageName()));
+                break;
             case "app":
                 if (pkg == null || pkg.isEmpty()) {
                     throw new IllegalArgumentException("app 面板需要 package");
@@ -1313,6 +1319,79 @@ public final class AndroidCapabilities {
         return json.toString();
     }
 
+    /**
+     * The system overlay grant plus the window host behind it.
+     *
+     * <p>{@code SYSTEM_ALERT_WINDOW} has no runtime-permission path: the only
+     * way to obtain it is the "display over other apps" settings screen. So
+     * {@code op=request} opens that screen and reports the state as it was
+     * before the user decided; the caller re-checks with status (or just calls
+     * show again) after coming back.</p>
+     */
+    private static String overlay(Context context, Uri uri) throws Exception {
+        String op = uri.getQueryParameter("op");
+        if (op == null || op.isEmpty()) op = "status";
+        switch (op) {
+            case "status":
+                return OverlayHost.statusJson(context).toString();
+            case "request": {
+                JSONObject json = ok();
+                boolean already = OverlayHost.granted(context);
+                json.put("granted", already);
+                if (already) {
+                    json.put("opened", false);
+                    json.put("note", "已授予悬浮窗权限，无需再申请");
+                    return json.toString();
+                }
+                OverlayHost.openSettings(context);
+                json.put("opened", true);
+                json.put("note", "已打开「显示在其他应用上层」设置页；允许后回到 App，"
+                        + "再用 op=status 或 op=show 确认");
+                return json.toString();
+            }
+            case "show": {
+                JSONObject options = new JSONObject();
+                String url = uri.getQueryParameter("url");
+                if (url != null) options.put("url", url);
+                maybeInt(uri, options, "widthDp");
+                maybeInt(uri, options, "heightDp");
+                maybeInt(uri, options, "x");
+                maybeInt(uri, options, "y");
+                maybeBool(uri, options, "draggable");
+                maybeBool(uri, options, "touchable");
+                maybeBool(uri, options, "reload");
+                String alpha = uri.getQueryParameter("alpha");
+                if (alpha != null && !alpha.isEmpty()) {
+                    try {
+                        options.put("alpha", Double.parseDouble(alpha));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+                return OverlayHost.show(context, options).toString();
+            }
+            case "hide":
+                return OverlayHost.hide(context).toString();
+            default:
+                throw new IllegalArgumentException("未知悬浮窗操作：" + op
+                        + "（可用 status / request / show / hide）");
+        }
+    }
+
+    private static void maybeInt(Uri uri, JSONObject target, String name) throws Exception {
+        String value = uri.getQueryParameter(name);
+        if (value == null || value.isEmpty()) return;
+        try {
+            target.put(name, Integer.parseInt(value));
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    private static void maybeBool(Uri uri, JSONObject target, String name) throws Exception {
+        String value = uri.getQueryParameter(name);
+        if (value == null || value.isEmpty()) return;
+        target.put(name, Boolean.parseBoolean(value));
+    }
+
     private static int intParam(Uri uri, String name, int fallback) {
         String value = uri.getQueryParameter(name);
         if (value == null || value.isEmpty()) return fallback;
@@ -1374,12 +1453,23 @@ public final class AndroidCapabilities {
         }
     }
 
+    /** Settings screen for "display over other apps". */
+    public static void openOverlaySettings(Context context) {
+        OverlayHost.openSettings(context);
+    }
+
+    /** Whether the overlay grant is in place. */
+    public static boolean overlayGranted(Context context) {
+        return OverlayHost.granted(context);
+    }
+
     /** Compact status line for the settings panel. */
     public static JSONObject permissionJson(Context context) throws Exception {
         JSONObject json = new JSONObject();
         json.put("accessibility", RunMode.isAccessibilityEnabled(context));
         json.put("notification", notificationAccessEnabled(context));
         json.put("writeSettings", Settings.System.canWrite(context));
+        json.put("overlay", OverlayHost.granted(context));
         return json;
     }
 }

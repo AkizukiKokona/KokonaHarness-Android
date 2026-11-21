@@ -25,13 +25,14 @@ KNHPlus 是内置 MCP 服务（`knhplus`），工具以 `android_*` 命名。全
 | `android_foreground` | 当前前台应用、类名、停留时长（**可能返回 IME 窗口**；聚焦应用用 `android_windows`） | 无障碍 |
 | `android_windows` | 所有交互窗口（类型/层级/bounds/包名） | 无障碍 |
 | `android_open` | 打开应用包或 URL | 无 |
-| `android_open_settings` | 直达 wifi/蓝牙/电池/显示/无障碍/通知/usage/app/write_settings 等面板 | 无 |
+| `android_open_settings` | 直达 wifi/蓝牙/电池/显示/无障碍/通知/usage/app/write_settings/overlay 等面板 | 无 |
+| `android_overlay` | 系统悬浮窗：`op=status` 查权限与窗口状态、`op=request` 跳「显示在其他应用上层」、`op=show` 显示桌宠/HUD 页面、`op=hide` 关闭 | 悬浮窗权限（特殊权限，仅系统设置可授予） |
 | `android_notifications` | 通知标题/正文/按钮列表/key | 通知使用权 |
 | `android_notification_action` | 点击通知按钮（回复、标记已读等） | 通知使用权 |
 | `android_dismiss_notification` | 按 key 清除单条通知 | 通知使用权 |
 | `android_dismiss_notifications` | 清除可清除通知 | 通知使用权 |
 | `android_status` | 电量、亮屏、音量、亮度、权限、前台应用 | 无 |
-| `android_policy` | 查看九项手机能力的 allow / ask / deny（只读） | 修改需在 App 设置页 |
+| `android_policy` | 查看十项手机能力的 allow / ask / deny（只读） | 修改需在 App 设置页 |
 | `android_device` | 型号/系统/ABI/语言时区/电量温度/内存/存储/网络/开机时长 | 无 |
 | `android_screen` | 分辨率、密度、刷新率、旋转、锁屏、亮度 | 无 |
 | `android_media` | 媒体键（播放/暂停/上下首/停止） | 无 |
@@ -51,12 +52,13 @@ KNHPlus 是内置 MCP 服务（`knhplus`），工具以 `android_*` 命名。全
 - 系统导航优先 `android_global`；坐标直接取节点 `bounds` 中心。
 - `android_set_text` 写入后会回读节点树：能读到就 `verified:true`；**WebView 输入框的 `text` 常恒空，此时返回 `ok:true` + `verified:false` + `reason`（这不是失败，不要重试）**，以截图 / 节点结构变化为准。清空输入框用 `text=""` 或 `clear=true`。`android_foreground` 可能拿到 IME 窗口，取聚焦应用请用 `android_windows`。
 - 通知/媒体会话未授权时，用 `android_open_settings panel=notification_listener` 直达系统「通知使用权」并勾选 KHA。
+- **悬浮窗是特殊权限**，没有运行时弹窗：`android_overlay op=request` 只能打开系统「显示在其他应用上层」页，用户手动开启后再 `op=status` 确认。授权后 `op=show url=file:///...` 会开一块透明 WebView；只有一块窗口，重复 show 是更新；`touchable=false` 让触摸穿透，页面内可用 `window.KokonaOverlay.moveBy/moveTo/resize/hide` 自己控制。桌宠类任务优先用本地 `file://` 页面，避免把远程页面放进悬浮窗。
 - 不要在没有明确指令时锁屏、清通知、打开未知链接或点击有副作用的按钮。
 
 ## 权限分级（重要）
 
 - 权限由用户在 App「设置 → 手机权限」按能力配置，每项三档：`allow`（直接执行）、`ask`（每次确认）、`deny`（禁止）。
-- 九项能力：读取屏幕、截图、点击与输入、打开应用与系统操作、读取通知、通知操作、媒体与音量亮度、剪贴板、语音与振动。
+- 十项能力：读取屏幕、截图、点击与输入、打开应用与系统操作、读取通知、通知操作、媒体与音量亮度、剪贴板、语音与振动、悬浮窗。
 - 默认：读类为 `allow`，操作类为 `ask`。用户可以随时修改，改完立即生效。
 - `ask` 会弹出原生确认框；用户拒绝或 45 秒未确认则本次操作取消。不要自动重试，除非用户明确要求。
 - `deny` 表示用户关闭了该能力，工具会直接返回“权限已关闭”。不要尝试换工具或拆分步骤绕过。

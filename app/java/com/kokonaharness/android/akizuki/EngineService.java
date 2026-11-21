@@ -1608,6 +1608,9 @@ public class EngineService extends Service {
         stopping = true;
         stopEngine();
         LocalBridgeServer.stop();
+        // An overlay without an engine has nothing to drive it; leaving the
+        // window behind would put an orphan pet on the user's home screen.
+        OverlayHost.hideQuietly(this);
         instance = null;
         releaseWakeLock();
         super.onDestroy();

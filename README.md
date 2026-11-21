@@ -12,10 +12,10 @@
 
 - **零 PRoot、零容器、零 ptrace。** Node 直接跑在 Android 原生 bionic 上，启动就是启动一个普通进程。在一台 2.9 GB 内存的华强北手表上，跑一个 glibc 程序 **16.6 ms**，比同机系统自带的 `/system/bin/true`（21.8 ms）还快——数据和测量方法在下面，[实机录屏在这儿](https://www.bilibili.com/video/BV1XLW96NEqS/)。
 - **电脑上能用的插件，这里直接装。** DSH 插件一半是浏览器界面、一半是 Node 宿主，手机跑的是同一套运行时、同一个插件协议——除移动端显示效果之外，**不需要任何额外适配**。
-- **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——九项能力各有独立的「允许 / 询问 / 关闭」。
+- **它真的能动手。** 读屏幕、点按钮、看通知、截图、改音量亮度——十项能力各有独立的「允许 / 询问 / 关闭」，其中悬浮窗可以先让插件把桌宠画到桌面之上。
 - **装一次，之后不用管。** 运行时随包分发，升级先解到临时目录再原子替换，不会留下半套。
 
-> Android 8.1+ · arm64 · 当前 **1.2.2**（160）· 内置 DSH **0.2.2-rc.5** / **KokonaRuntime r50**
+> Android 8.1+ · arm64 · 当前 **1.2.3**（161）· 内置 DSH **0.2.2-rc.5** / **KokonaRuntime r51**
 
 ## 实测性能：手表上的启动开销
 
@@ -107,7 +107,7 @@
 ## 它能替你做什么
 
 - **出门在外也能把活交出去。** 通勤、排队、临时没带电脑，一样可以丢一句「把这个月的账单按类别汇总，做成表格和趋势图」，让它读文件、写脚本、把结果交回你手里。
-- **让 AI 帮你点手机。** 读屏幕、看通知、点按输入、截图、调媒体和亮度——九项能力各自设成「允许 / 每次询问 / 关闭」，需要确认时由系统弹窗问你，模型没法自己改授权。
+- **让 AI 帮你点手机。** 读屏幕、看通知、点按输入、截图、调媒体和亮度——十项能力各自设成「允许 / 每次询问 / 关闭」，需要确认时由系统弹窗问你，模型没法自己改授权。
 - **还是你熟悉的那套 DSH。** 会话、模型切换、插件市场、终端标签、文件树工作台都在，界面是官方 Web UI 加了一点移动端适配，不是另起炉灶的简化版。
 - **Linux 命令行工具也能带进来。** 碰到以 glibc 链接的 arm64 程序，不必为了一个工具先装一整套 Linux；`kokona-grun` 直接接住，模型会按 `glibc-runtime` 技能先判断 ELF 解释器再决定怎么跑。
 - **装一次，升级不折腾。** KokonaRuntime 随 App 一起打包；升级时先解到临时目录再原子替换旧树，不会留下半套运行时。小修复走启动时自愈，不必重打整包。
@@ -169,7 +169,7 @@ DSH 的插件由两半组成：浏览器里的界面（client）和 Node 侧的�
 | 遇到 glibc 程序 | 默认仍走 bionic；按需用 **`kokona-grun`** 加载独立 glibc，**同样不用 PRoot**（构建时可带入） | 本机环境本身即完整 Ubuntu 用户空间，glibc 程序在其中直接运行 |
 | 界面 | 复用**官方 DSH Web UI**（WebView）+ 移动端定制 | 自研 **Flutter 原生界面**，可切网页版 |
 | 连回电脑 | 暂未提供 | **SSH / DSH Remote** |
-| 手机操控的授权 | **九项能力**各自 allow / ask / deny，ask 走原生确认闸门 | 三档确认（每次询问 / 本任务 / 始终），敏感操作默认交还用户 |
+| 手机操控的授权 | **十项能力**各自 allow / ask / deny，ask 走原生确认闸门 | 三档确认（每次询问 / 本任务 / 始终），敏感操作默认交还用户 |
 | 运行环境形态 | KokonaRuntime 快照压缩约 209 MiB、解压约 1.14 GiB，整包全量替换 | 首次本机环境建议预留约 2 GB，arm64 APK 约 210 MiB |
 | 获取方式 | 源码发布，自行构建 | Release 提供 arm64 APK 与完整使用文档 |
 
@@ -209,13 +209,13 @@ DSH 的插件由两半组成：浏览器里的界面（client）和 Node 侧的�
 
 - **不套容器**：Node 直接跑在 Android 的 bionic 上，启动快、体积小，也没有 ptrace 的额外开销；代价是依赖 glibc 的预编译包需要单独适配（现在可按需用 `kokona-grun`，见「已知限制」）。
 - **薄原生桥**：Java 侧只做 Android 特有的事（无障碍、通知读取、Shizuku/Root、截图、剪贴板、震动、TTS），其余全部交给 DSH 插件与 MCP。
-- **能力逐项授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），九项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；授权项在 `kha-setthings` 插件提供的专属设置页中展示与修改。
+- **能力逐项授权**：授权状态由 `AndroidPermissions` 持久化到 SharedPreferences（`kokona_permissions`），十项能力各自可选 `allow` / `ask` / `deny`。MCP 每次调用通过 `/policy` 实时读取，模型只能读、不能改；授权项在 `kha-setthings` 插件提供的专属设置页中展示与修改。
 - **确认闸门**：`ask` 能力触发 `ConfirmationGate` 原生弹窗，45 秒无响应按拒绝处理；App 不可见时不弹窗，并提示先打开 App。
 - **KokonaRuntime 全量安装**：`RuntimeInstaller` 把新快照解到 `KokonaRuntime.new`，确认完整后把旧目录 rename 为 `KokonaRuntime.old`、staging 转正，再删旧树；`runtimeLooksComplete()` 抽查关键文件，避免「版本号相同但目录是空的」被误判为已安装。小修复（JS 补丁、执行位）由 `EngineService` 每次启动幂等写入，不重打整包。
 
-## 手机能力：九项授权
+## 手机能力：十项授权
 
-AI 想动手机上的东西，得先过这九道开关。每一项都能单独设成「直接允许 / 每次问我 / 关掉」：
+AI 想动手机上的东西，得先过这十道开关。每一项都能单独设成「直接允许 / 每次问我 / 关掉」：
 
 | capability | 含义 | 默认 |
 |---|---|---|
@@ -228,12 +228,23 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 | `media` | 媒体控制、音量/亮度 | ask |
 | `clipboard` | 读写剪贴板 | ask |
 | `feedback` | TTS、震动/提示 | allow |
+| `overlay` | 在其他应用上层显示窗口（桌宠/HUD） | ask |
 
 `allow` 直接执行；`ask` 弹原生确认；`deny` 返回「权限已关闭」。模型通过 `android_policy` 只能读取当前状态。
 
+### 悬浮窗（桌宠 / HUD）
+
+桌宠这类插件要把画面画在其他应用上面，Android 只给了一个入口：`SYSTEM_ALERT_WINDOW`。它是**特殊权限**——没有 `requestPermissions()` 那种弹窗，用户只能去系统「显示在其他应用上层」里手动开。所以这里做的是三件事：
+
+- **设置页「悬浮窗」**：显示当前状态，未授权时给一个「去授权」，直接跳 `ACTION_MANAGE_OVERLAY_PERMISSION`（带包名）；从系统页返回会自动刷新，不需要重启。
+- **MCP / bridge**：`android_overlay op=status|request|show|hide`；`android_status` 也带 `canDrawOverlays`，`android_open_settings panel=overlay` 可直达。
+- **真的能画**：授权后 `op=show url=file:///...` 会开一块透明 WebView 悬浮窗（`TYPE_APPLICATION_OVERLAY`），参数有 `widthDp` / `heightDp` / `x` / `y` / `alpha` / `draggable` / `touchable`；页面里还能调 `window.KokonaOverlay.moveBy(dx,dy)` / `moveTo(x,y)` / `resize(wDp,hDp)` / `hide()` 自己控制窗口，桌宠不用让 JS 和原生抢触摸。
+
+窗口同一时刻只有一块，重复 `show` 就是更新；引擎停止时它会一并关掉，不会在桌面上留一个没人管的宠物。
+
 ## 安全模型与边界
 
-**定位**：九项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
+**定位**：十项授权是「防误操作」的 UX 闸门，不是对抗同 UID 代码的安全边界。引擎、插件、MCP 与 App 同 UID 运行，恶意代码原则上可以读写 App 私有文件；这里能防的是模型手滑、网页静默提权和错误调用。
 
 已实施（1.1.0）：
 
@@ -246,7 +257,7 @@ AI 想动手机上的东西，得先过这九道开关。每一项都能单独�
 已知边界（未覆盖）：
 
 - **fs 不在授权内**：`dsh-fs-local` 没有 allow/ask/deny 检查；DSH 权限 preset 在内核 < 5.13 时直接 `danger-full-access`。
-- **同 UID 信任边界**：bash/插件可读写 `kokona_permissions.xml`、token、runtime 中的 `server.mjs`；Root 模式下整个引擎以 root 启动，九项授权对 shell/fs 无约束力。
+- **同 UID 信任边界**：bash/插件可读写 `kokona_permissions.xml`、token、runtime 中的 `server.mjs`；Root 模式下整个引擎以 root 启动，十项授权对 shell/fs 无约束力。
 - **审批绑定粒度**：`/confirm` 文案仍由调用方构造（含模型参数），grant 绑定的是「能力」而非单次具体动作。
 - **持久化未脱敏**：截图与无障碍文本会以明文进入 DSH 会话 JSONL；本轮未做字段级脱敏。
 
@@ -332,14 +343,14 @@ ANDROID_SDK_ROOT=/workspace/build/android-sdk ./build.sh
 ```
 KokonaHarness-Android/
 ├── app/
-│   ├── AndroidManifest.xml        # versionCode 160 / versionName 1.2.2
+│   ├── AndroidManifest.xml        # versionCode 161 / versionName 1.2.3
 │   ├── java/com/kokonaharness/android/akizuki/
 │   │   ├── MainActivity.java      # WebView、KokonaBridge、SHIM、生命周期
 │   │   ├── EngineService.java     # 前台服务、引擎进程、profile 与启动自愈补丁
 │   │   ├── RuntimeInstaller.java  # 运行时全量解包 + 原子替换 + 执行位修复
 │   │   ├── TarExtractor.java      # 精简 tar/PAX 解包器
 │   │   ├── LocalBridgeServer.java # loopback HTTP：/policy /confirm /screenshot …
-│   │   ├── AndroidPermissions.java# 九项能力授权持久化
+│   │   ├── AndroidPermissions.java# 十项能力授权持久化
 │   │   ├── ConfirmationGate.java  # 原生确认弹窗
 │   │   ├── AndroidCapabilities.java # 无障碍/通知/媒体/剪贴板等实现
 │   │   ├── RunMode.java           # 普通 / Shizuku / Root
@@ -378,7 +389,9 @@ KokonaHarness-Android/
 <details>
 <summary>展开开发记录</summary>
 
-**1.2.2（本次）**：两件事。**① 安全模式**：连续 2 次启动都没走到「引擎已就绪」，下一次只加载 `@deepseek-ai/dsh-base`、`dsh-web-app`、插件市场和 KHA 设置；原插件列表与两层 `cordis.patch.yml` 先备份成 `*.safemode`，界面顶部黄色横幅可一键退出并恢复（安全模式下卸载的插件不会回来）。**② DSH 0.2.2-rc.5**：CLI 入口换成转发 shim（新增 `./profile-boot` export），启动参数契约不变——`--host` / `--port` / `--no-open` 仍由 web-app 解析，launcher 只认 `--profile` / `--patch` / `--dump-*`。rc.5 新增插件兼容性预检：`engines.dsh` 或 DSH peer 不满足的插件会**被禁用并记一条日志**，其余插件继续启动，不再整体退出；因此安全模式现在只兜「同步回调抛异常」这类无法降级的致命路径。内置插件随版本对齐：`dshmarket` 1.74.0、`dsh-better-sidebar` 0.32.1、`dsh-thinking-slider` 0.4.0——旧版 peer 在 rc.5 下会被预检禁用，等于拿掉唯一的插件控制面。运行时 r50，升级需重解压一次。
+**1.2.3（本次）**：悬浮窗权限与宿主。**① 权限**：清单加 `SYSTEM_ALERT_WINDOW`；设置页新增「悬浮窗」一栏，状态自动刷新，「去授权」直接跳 `ACTION_MANAGE_OVERLAY_PERMISSION`（带包名）——这是特殊权限，系统没有运行时弹窗，只能这样授予；`android_status` 增加 `canDrawOverlays`，`android_open_settings` 增加 `panel=overlay`。**② 宿主**：`OverlayHost` 用 `TYPE_APPLICATION_OVERLAY` 托一块透明 WebView，`android_overlay op=show` 传 URL 即可显示桌宠页面，支持尺寸/坐标/透明度/拖动/触摸穿透，页面内可调 `KokonaOverlay.moveBy/moveTo/resize/hide`；同一时刻一块窗口，重复 show 即更新，引擎停止时一并关闭。**③ 授权档位**：新增第十项能力 `overlay`（默认 `ask`），悬浮窗能盖住其他应用，值得单独关。运行时 r51（`knhplus-mcp` 在运行时内），升级会重解压一次。
+
+**1.2.2**：两件事。**① 安全模式**：连续 2 次启动都没走到「引擎已就绪」，下一次只加载 `@deepseek-ai/dsh-base`、`dsh-web-app`、插件市场和 KHA 设置；原插件列表与两层 `cordis.patch.yml` 先备份成 `*.safemode`，界面顶部黄色横幅可一键退出并恢复（安全模式下卸载的插件不会回来）。**② DSH 0.2.2-rc.5**：CLI 入口换成转发 shim（新增 `./profile-boot` export），启动参数契约不变——`--host` / `--port` / `--no-open` 仍由 web-app 解析，launcher 只认 `--profile` / `--patch` / `--dump-*`。rc.5 新增插件兼容性预检：`engines.dsh` 或 DSH peer 不满足的插件会**被禁用并记一条日志**，其余插件继续启动，不再整体退出；因此安全模式现在只兜「同步回调抛异常」这类无法降级的致命路径。内置插件随版本对齐：`dshmarket` 1.74.0、`dsh-better-sidebar` 0.32.1、`dsh-thinking-slider` 0.4.0——旧版 peer 在 rc.5 下会被预检禁用，等于拿掉唯一的插件控制面。运行时 r50，升级需重解压一次。
 
 **1.1.0**（运行时 r39）把 `kokona-grun` 从 170 行 sh 包装脚本**整个换成原生 ELF launcher** （`app/native/kokona-run.c`）：进程内完成 DNS 校验、locale、前缀与环境准备，最后一次 `execve()` 直达 glibc loader，**没有 toybox sh、没有 fork、没有外部命令**。设备实测旧脚本单次 175–192ms，其中 65% 花在 `dirname`/`tr`/`getprop`/`cd+pwd` 的 fork+exec 上；（当时记录的 6ms/26ms 对比数据测量方法不同，已不再作为结论引用）——瓶颈从来不是 glibc。七个 `k*` 工具改成同一个 ELF 按 `argv[0]` 分派（设备端 tar 会丢链接，所以是实体副本），新增 `--exec`（跳过准备）与 `--shell`（一次准备、连续跑多个程序）。同批修掉：无 locale 数据时 `LANG`/`LC_ALL` 一起强制为 C（消除 `locale` 的三行 `Cannot set LC_*`）、DNS 先比对再写（`resolv.conf` 的 mtime 不再无故变化）、热路径彻底不调 `getprop`、`--version`/`--help` 给友好输出。另把「打开目录」统一按平台分派：Android 走系统文件管理器 （`ACTION_VIEW` + externalstorage 文档 URI），Windows / WSL / macOS 行为一行未动；补上 `KOKONA_ANDROID=1` 供运行时判定平台（Node 在 Android 上也报 `linux`）。版本号 1.1.0 / versionCode 149，正式发行版。
 
@@ -435,9 +448,9 @@ KokonaHarness-Android/
 
 ## 版本
 
-- App：**1.2.2**（versionCode 160）
+- App：**1.2.3**（versionCode 161）
 - DSH：**0.2.2-rc.5**
-- KokonaRuntime：**dsh-0.2.2-rc.5-r50**
+- KokonaRuntime：**dsh-0.2.2-rc.5-r51**
 - 平台：Android 8.1+（API 27）/ arm64-v8a / `targetSdk 28`
 - KokonaRuntime 快照 `runtime.tar.zst` 约 209 MiB、解压约 1.14 GiB（不入库，随 Release 的 APK 分发）
 - 仓库：public · Release 以当前版本为准，跳过此前所有版本
